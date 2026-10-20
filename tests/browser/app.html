@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Stay search fixture</title>
+  <style>
+    body {
+      font: 18px system-ui;
+      max-width: 700px;
+      margin: 50px auto;
+    }
+    input,
+    select,
+    button {
+      font: inherit;
+      padding: 10px;
+    }
+    label {
+      display: block;
+      margin: 20px 0;
+    }
+    article {
+      padding: 20px;
+      border: 1px solid #999;
+    }
+  </style>
+  <main>
+    <h1>Find a stay</h1>
+    <form id="search">
+      <label
+        >Destination <input name="destination" aria-label="Destination"
+      /></label>
+      <label
+        >Category
+        <select name="category" aria-label="Category">
+          <option>All</option>
+          <option>Design</option>
+          <option>Nature</option>
+        </select></label
+      >
+      <label
+        ><input type="checkbox" name="cancellation" /> Free cancellation</label
+      >
+      <button>Find stays</button>
+    </form>
+    <section id="results" aria-live="polite"></section>
+  </main>
+  <script>
+    const form = document.querySelector("form");
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const fields = new FormData(form);
+      const valid =
+        fields.get("destination") === "Lisbon" &&
+        fields.get("category") === "Design" &&
+        fields.has("cancellation");
+      const results = document.getElementById("results");
+      results.replaceChildren();
+      const message = document.createElement("p");
+      message.textContent = valid ? "1 matching stay" : "No matching stays";
+      results.append(message);
+      if (valid) {
+        const button = document.createElement("button");
+        button.textContent = "View Casa Flora";
+        button.onclick = () => {
+          document.querySelector("main").innerHTML =
+            "<h1>Casa Flora</h1><p>Applied filters: Lisbon / Design / cancellation enabled</p>";
+          history.pushState({}, "", "#casa-flora");
+        };
+        results.append(button);
+      }
+    };
+  </script>
+</html>
