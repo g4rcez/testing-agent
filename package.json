@@ -30,6 +30,10 @@
     "examples",
     "tools/laya-server.py",
     "README.md",
+    "CONTRIBUTING.md",
+    "docs/RELEASE.md",
+    "docs/RELEASE-READINESS.md",
+    "docs/evidence",
     "LICENSE",
     "SECURITY.md",
     "CHANGELOG.md"

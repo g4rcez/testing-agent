@@ -1,0 +1,940 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20T20:01:39.427Z",
+  "codeRevision": "a050c816fa12c06fd11c53405c061100b9099cec",
+  "workingTreeDirty": false,
+  "provider": "laya",
+  "health": {
+    "model": "cklxx/laya-browser",
+    "revision": "645cf366a2ae35f1086e8c20eff48f909bb49206",
+    "device": "mps"
+  },
+  "browser": "agent-browser 0.39.1",
+  "passed": 18,
+  "total": 18,
+  "elapsedMs": 31363,
+  "boundary": "Real model calls and browser actions on local acceptance fixtures; includes browser startup and assertions. This is not a general website accuracy benchmark.",
+  "results": [
+    {
+      "repeat": 1,
+      "runId": "e0cdf17b-cbe9-4604-ae5c-97b2df23d4fe",
+      "session": "jev-e0cdf17b-cbe9-4604-ae5c-97b2df23d4fe",
+      "name": "click repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Click Continue",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Continue",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9066,
+          "elapsedMs": 1956,
+          "inferenceMs": 497,
+          "executeMs": 88
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2236,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "75954fe7-d505-471a-b857-1710774a0203",
+      "session": "jev-75954fe7-d505-471a-b857-1710774a0203",
+      "name": "form repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 2,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in City",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Click Save",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "City",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.791,
+          "elapsedMs": 1171,
+          "inferenceMs": 195,
+          "executeMs": 34
+        },
+        {
+          "stepIndex": 1,
+          "operation": "CLICK",
+          "target": "Save",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6105,
+          "elapsedMs": 1593,
+          "inferenceMs": 119,
+          "executeMs": 70
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2024,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "e3056136-7280-487f-8e0d-b63944f3ae88",
+      "session": "jev-e3056136-7280-487f-8e0d-b63944f3ae88",
+      "name": "check repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Check Enable feature",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Enable feature",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9051,
+          "elapsedMs": 957,
+          "inferenceMs": 77,
+          "executeMs": 39
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1181,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "a7a943ff-b6cd-47ac-ac97-3fa4736bb16b",
+      "session": "jev-a7a943ff-b6cd-47ac-ac97-3fa4736bb16b",
+      "name": "select repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Select Design in Category",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8978,
+          "elapsedMs": 825,
+          "inferenceMs": 73,
+          "executeMs": 32
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1076,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "c6e10462-8dfa-4ae6-9609-8f4d5e59d0bf",
+      "session": "jev-c6e10462-8dfa-4ae6-9609-8f4d5e59d0bf",
+      "name": "navigate repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Open destination",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Open destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9,
+          "elapsedMs": 903,
+          "inferenceMs": 76,
+          "executeMs": 118
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        },
+        {
+          "passed": true,
+          "index": 1,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1233,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "463e26de-0812-485e-93cd-665d96251291",
+      "session": "jev-463e26de-0812-485e-93cd-665d96251291",
+      "name": "hotel repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 5,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in Destination",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Choose Design in Category",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Enable free cancellation",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Submit Find stays",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Open Casa Flora",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7732,
+          "elapsedMs": 1020,
+          "inferenceMs": 135,
+          "executeMs": 34
+        },
+        {
+          "stepIndex": 1,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.1465,
+          "elapsedMs": 1367,
+          "inferenceMs": 138,
+          "executeMs": 50
+        },
+        {
+          "stepIndex": 2,
+          "operation": "PRESS_ENTER",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.3263,
+          "elapsedMs": 1839,
+          "inferenceMs": 150,
+          "executeMs": 38
+        },
+        {
+          "stepIndex": 2,
+          "operation": "CLICK",
+          "target": "Free cancellation",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7859,
+          "elapsedMs": 2124,
+          "inferenceMs": 155,
+          "executeMs": 33
+        },
+        {
+          "stepIndex": 3,
+          "operation": "CLICK",
+          "target": "Find stays",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6427,
+          "elapsedMs": 2493,
+          "inferenceMs": 165,
+          "executeMs": 46
+        },
+        {
+          "stepIndex": 4,
+          "operation": "CLICK",
+          "target": "View Casa Flora",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8175,
+          "elapsedMs": 2997,
+          "inferenceMs": 165,
+          "executeMs": 41
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 3242,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "95cc4299-308b-49ce-9ac5-be3989ef9ad5",
+      "session": "jev-95cc4299-308b-49ce-9ac5-be3989ef9ad5",
+      "name": "click repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Click Continue",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Continue",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9066,
+          "elapsedMs": 761,
+          "inferenceMs": 83,
+          "executeMs": 35
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1015,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "ba593e98-4079-48d2-8621-60c82deb6b91",
+      "session": "jev-ba593e98-4079-48d2-8621-60c82deb6b91",
+      "name": "form repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 2,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in City",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Click Save",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "City",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.791,
+          "elapsedMs": 1222,
+          "inferenceMs": 211,
+          "executeMs": 44
+        },
+        {
+          "stepIndex": 1,
+          "operation": "CLICK",
+          "target": "Save",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6105,
+          "elapsedMs": 1577,
+          "inferenceMs": 97,
+          "executeMs": 57
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1967,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "15b8beec-a243-402e-9955-42add98e74df",
+      "session": "jev-15b8beec-a243-402e-9955-42add98e74df",
+      "name": "check repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Check Enable feature",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Enable feature",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9051,
+          "elapsedMs": 945,
+          "inferenceMs": 126,
+          "executeMs": 41
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1334,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "a2532c00-106d-48ae-ac59-7ae0cd37b905",
+      "session": "jev-a2532c00-106d-48ae-ac59-7ae0cd37b905",
+      "name": "select repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Select Design in Category",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8978,
+          "elapsedMs": 840,
+          "inferenceMs": 92,
+          "executeMs": 34
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1083,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "008579ce-7111-4270-bfbb-705929616efe",
+      "session": "jev-008579ce-7111-4270-bfbb-705929616efe",
+      "name": "navigate repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Open destination",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Open destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9,
+          "elapsedMs": 1058,
+          "inferenceMs": 118,
+          "executeMs": 35
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        },
+        {
+          "passed": true,
+          "index": 1,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1258,
+      "resume": null
+    },
+    {
+      "repeat": 2,
+      "runId": "6877a753-10f3-4669-b336-d81f8199a7fb",
+      "session": "jev-6877a753-10f3-4669-b336-d81f8199a7fb",
+      "name": "hotel repeat 2",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 5,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in Destination",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Choose Design in Category",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Enable free cancellation",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Submit Find stays",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Open Casa Flora",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7732,
+          "elapsedMs": 803,
+          "inferenceMs": 112,
+          "executeMs": 33
+        },
+        {
+          "stepIndex": 1,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.1465,
+          "elapsedMs": 1127,
+          "inferenceMs": 135,
+          "executeMs": 32
+        },
+        {
+          "stepIndex": 2,
+          "operation": "PRESS_ENTER",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.3263,
+          "elapsedMs": 1462,
+          "inferenceMs": 142,
+          "executeMs": 34
+        },
+        {
+          "stepIndex": 2,
+          "operation": "CLICK",
+          "target": "Free cancellation",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7859,
+          "elapsedMs": 1747,
+          "inferenceMs": 155,
+          "executeMs": 33
+        },
+        {
+          "stepIndex": 3,
+          "operation": "CLICK",
+          "target": "Find stays",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6427,
+          "elapsedMs": 2092,
+          "inferenceMs": 158,
+          "executeMs": 31
+        },
+        {
+          "stepIndex": 4,
+          "operation": "CLICK",
+          "target": "View Casa Flora",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8175,
+          "elapsedMs": 2448,
+          "inferenceMs": 163,
+          "executeMs": 36
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2651,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "a899ac85-cf3e-4d0a-90fb-1a72fdc416d8",
+      "session": "jev-a899ac85-cf3e-4d0a-90fb-1a72fdc416d8",
+      "name": "click repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Click Continue",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Continue",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9066,
+          "elapsedMs": 724,
+          "inferenceMs": 72,
+          "executeMs": 35
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 941,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "21b32806-c7d0-4d2c-b4ed-b25e0af60f0c",
+      "session": "jev-21b32806-c7d0-4d2c-b4ed-b25e0af60f0c",
+      "name": "form repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 2,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in City",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Click Save",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "City",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.791,
+          "elapsedMs": 857,
+          "inferenceMs": 136,
+          "executeMs": 36
+        },
+        {
+          "stepIndex": 1,
+          "operation": "CLICK",
+          "target": "Save",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6105,
+          "elapsedMs": 1143,
+          "inferenceMs": 92,
+          "executeMs": 31
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1393,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "d6a4763f-094e-4bb8-b116-dadaff3d7909",
+      "session": "jev-d6a4763f-094e-4bb8-b116-dadaff3d7909",
+      "name": "check repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Check Enable feature",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Enable feature",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9051,
+          "elapsedMs": 712,
+          "inferenceMs": 61,
+          "executeMs": 45
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 953,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "2b79e4ce-b5ce-431a-be6c-c9b4bfd0d771",
+      "session": "jev-2b79e4ce-b5ce-431a-be6c-c9b4bfd0d771",
+      "name": "select repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Select Design in Category",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8978,
+          "elapsedMs": 779,
+          "inferenceMs": 69,
+          "executeMs": 33
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1004,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "603d6148-59ac-4e48-a780-a88d5ea91c92",
+      "session": "jev-603d6148-59ac-4e48-a780-a88d5ea91c92",
+      "name": "navigate repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Open destination",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Open destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.9,
+          "elapsedMs": 806,
+          "inferenceMs": 74,
+          "executeMs": 52
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        },
+        {
+          "passed": true,
+          "index": 1,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1018,
+      "resume": null
+    },
+    {
+      "repeat": 3,
+      "runId": "bac470b1-bbd4-4cd4-98d5-ba5730e93af4",
+      "session": "jev-bac470b1-bbd4-4cd4-98d5-ba5730e93af4",
+      "name": "hotel repeat 3",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 5,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in Destination",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Choose Design in Category",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Enable free cancellation",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Submit Find stays",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Open Casa Flora",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7732,
+          "elapsedMs": 854,
+          "inferenceMs": 113,
+          "executeMs": 42
+        },
+        {
+          "stepIndex": 1,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.1465,
+          "elapsedMs": 1214,
+          "inferenceMs": 134,
+          "executeMs": 39
+        },
+        {
+          "stepIndex": 2,
+          "operation": "PRESS_ENTER",
+          "target": "Destination",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.3263,
+          "elapsedMs": 1550,
+          "inferenceMs": 141,
+          "executeMs": 31
+        },
+        {
+          "stepIndex": 2,
+          "operation": "CLICK",
+          "target": "Free cancellation",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.7859,
+          "elapsedMs": 1834,
+          "inferenceMs": 152,
+          "executeMs": 32
+        },
+        {
+          "stepIndex": 3,
+          "operation": "CLICK",
+          "target": "Find stays",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.6427,
+          "elapsedMs": 2176,
+          "inferenceMs": 156,
+          "executeMs": 32
+        },
+        {
+          "stepIndex": 4,
+          "operation": "CLICK",
+          "target": "View Casa Flora",
+          "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+          "confidence": 0.8175,
+          "elapsedMs": 2527,
+          "inferenceMs": 161,
+          "executeMs": 37
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2729,
+      "resume": null
+    }
+  ]
+}
