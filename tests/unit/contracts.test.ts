@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { envelopeSchema, PROTOCOL, runSchema } from "../../src/contracts.ts";
 
 const input = {
+  expect: [{ text: "Casa Flora" }],
   prompt: "Find a hotel",
   steps: [
     "Search Lisbon",
@@ -47,5 +48,31 @@ describe("plugin inputs", () => {
       envelopeSchema.safeParse({ protocol: "other", type: "agent.run" })
         .success,
     ).toBe(false);
+  });
+  test("requires final assertions and binds environment secrets to a field", () => {
+    expect(
+      runSchema.safeParse({ ...input, expect: undefined, steps: ["Open"] })
+        .success,
+    ).toBe(false);
+    expect(
+      runSchema.safeParse({
+        ...input,
+        steps: [
+          { instruction: "Fill password", valueFromEnv: "TEST_PASSWORD" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      runSchema.safeParse({
+        ...input,
+        steps: [
+          {
+            instruction: "Fill password",
+            valueFromEnv: "TEST_PASSWORD",
+            selector: "input[type=password]",
+          },
+        ],
+      }).success,
+    ).toBe(true);
   });
 });

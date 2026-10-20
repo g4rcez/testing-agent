@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { StaleDecisionError } from "../../src/browser.ts";
 import {
   runSchema,
   type Decision,
@@ -32,6 +33,7 @@ const input = () =>
     backend: { provider: "laya" },
     session: "unit",
     actionsPerCall: 1,
+    expect: [{ text: "App", timeoutMs: 0 }],
   });
 const observed = (fingerprint = "a", tree = "App"): Observation => ({
   url: "https://example.com",
@@ -93,7 +95,7 @@ test("discards a stale decision before any input", async () => {
         command: async () => ({}),
         observe: async () => observed(observations++ === 0 ? "old" : "new"),
         execute: async () => {
-          executed++;
+          throw new StaleDecisionError("changed before dispatch");
         },
       }),
       decide: async () => decision(predictions++ === 0 ? "CLICK" : "DONE"),
@@ -110,7 +112,10 @@ test("rejects premature DONE when an explicit completion assertion fails", async
     {
       ...input(),
       steps: [
-        { instruction: "Open the result", expect: { text: "Result details" } },
+        {
+          instruction: "Open the result",
+          expect: { text: "Result details", timeoutMs: 0 },
+        },
       ],
     },
     {
@@ -125,9 +130,9 @@ test("rejects premature DONE when an explicit completion assertion fails", async
       fieldValue: async () => "unused",
     },
   );
-  expect(result.status).toBe("blocked");
+  expect(result.status).toBe("failed");
   expect(result.completedSteps).toHaveLength(0);
-  expect(result.reason).toContain("expected text or URL");
+  expect(result.reason).toContain("assertions failed");
 });
 
 test("never retries an input whose acknowledgement was lost", async () => {
@@ -162,7 +167,12 @@ test("detects a process interrupted after persisting its input intent", async ()
   };
   const state = await startRun(input(), dependencies);
   state.status = "running";
-  state.pendingAction = "CLICK";
+  state.pendingAction = {
+    actionId: crypto.randomUUID(),
+    decision: { operation: "CLICK", confidence: 1 },
+    inferenceMs: 0,
+    startedAt: Date.now(),
+  };
   await saveRun(state);
   expect((await resumeRun(state.runId, dependencies)).status).toBe("uncertain");
 });
@@ -191,3 +201,43 @@ test("can accept DONE after the last permitted action", async () => {
   expect(result.status).toBe("completed");
   expect(executed).toBe(1);
 });
+
+for (const kind of ["call", "total"] as const) {
+  test(`${kind} deadlines abort pending decisions and preserve the correct status`, async () => {
+    const result = await startRun(
+      {
+        ...input(),
+        timeoutMs: kind === "call" ? 1000 : 45000,
+        totalTimeoutMs: kind === "total" ? 1000 : 10000,
+      },
+      {
+        browser: () => ({
+          command: async () => ({}),
+          observe: async () => observed(),
+          execute: async () => {
+            throw new Error("No input expected");
+          },
+        }),
+        decide: async (
+          _input,
+          _index,
+          _observed,
+          _history,
+          _deadline,
+          signal,
+        ) =>
+          new Promise((_resolve, reject) => {
+            if (!signal) throw new Error("Missing cancellation signal");
+            signal.addEventListener(
+              "abort",
+              () => reject(new Error("Aborted")),
+              { once: true },
+            );
+          }),
+        fieldValue: async () => "unused",
+      },
+    );
+    expect(result.status).toBe(kind === "call" ? "paused" : "failed");
+    expect(result.actions).toHaveLength(0);
+  }, 5000);
+}

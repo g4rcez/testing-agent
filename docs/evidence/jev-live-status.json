@@ -1,0 +1,6 @@
+{
+  "provider": "jev",
+  "status": "not_run",
+  "reason": "TYPESAFE_API_KEY is not configured. Scripted Jev protocol tests are not live-model evidence.",
+  "requiredCommand": "bun run test:live -- --backend jev --repeats 3"
+}

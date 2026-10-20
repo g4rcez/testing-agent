@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20T19:52:40.355Z",
+  "codeRevision": "3524fe90243142d410f217028dbcf4f8f7929812",
+  "workingTreeDirty": true,
+  "provider": "laya",
+  "health": {
+    "model": "cklxx/laya-browser",
+    "revision": "645cf366a2ae35f1086e8c20eff48f909bb49206",
+    "device": "mps"
+  },
+  "browser": "agent-browser 0.39.1",
+  "passed": 6,
+  "total": 6,
+  "elapsedMs": 10828,
+  "boundary": "Real model calls and browser actions on local acceptance fixtures; includes browser startup and assertions. This is not a general website accuracy benchmark.",
+  "results": [
+    {
+      "repeat": 1,
+      "runId": "3df95460-5268-408b-8340-78a37f75fd1b",
+      "session": "jev-3df95460-5268-408b-8340-78a37f75fd1b",
+      "name": "click repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Click Continue",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Continue",
+          "confidence": 0.9073,
+          "elapsedMs": 1786,
+          "inferenceMs": 503,
+          "executeMs": 60
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2043,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "9a56d94d-6945-4afe-acbf-0bab63accd8f",
+      "session": "jev-9a56d94d-6945-4afe-acbf-0bab63accd8f",
+      "name": "form repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 2,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in City",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Click Save",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "City",
+          "confidence": 0.7903,
+          "elapsedMs": 1191,
+          "inferenceMs": 266,
+          "executeMs": 40
+        },
+        {
+          "stepIndex": 1,
+          "operation": "CLICK",
+          "target": "Save",
+          "confidence": 0.6734,
+          "elapsedMs": 1538,
+          "inferenceMs": 107,
+          "executeMs": 39
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1806,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "9ef10282-f38f-49d9-9aae-316dce582a96",
+      "session": "jev-9ef10282-f38f-49d9-9aae-316dce582a96",
+      "name": "check repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Check Enable feature",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Enable feature",
+          "confidence": 0.9054,
+          "elapsedMs": 806,
+          "inferenceMs": 64,
+          "executeMs": 36
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1050,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "9fcd8e8e-6ab9-49b3-a211-745bce75cb90",
+      "session": "jev-9fcd8e8e-6ab9-49b3-a211-745bce75cb90",
+      "name": "select repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Select Design in Category",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "confidence": 0.8999,
+          "elapsedMs": 790,
+          "inferenceMs": 64,
+          "executeMs": 39
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1027,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "9713bb5a-28fc-477c-94a2-27a2091d9550",
+      "session": "jev-9713bb5a-28fc-477c-94a2-27a2091d9550",
+      "name": "navigate repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 1,
+      "completedSteps": [
+        {
+          "instruction": "Open destination",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "CLICK",
+          "target": "Open destination",
+          "confidence": 0.9004,
+          "elapsedMs": 802,
+          "inferenceMs": 65,
+          "executeMs": 46
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        },
+        {
+          "passed": true,
+          "index": 1,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 1034,
+      "resume": null
+    },
+    {
+      "repeat": 1,
+      "runId": "0ed7b1da-add3-4e37-8668-691ab5f03550",
+      "session": "jev-0ed7b1da-add3-4e37-8668-691ab5f03550",
+      "name": "hotel repeat 1",
+      "status": "completed",
+      "currentStep": null,
+      "totalSteps": 5,
+      "completedSteps": [
+        {
+          "instruction": "Enter Lisbon in Destination",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Choose Design in Category",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Enable free cancellation",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Submit Find stays",
+          "verification": "assertion"
+        },
+        {
+          "instruction": "Open Casa Flora",
+          "verification": "model"
+        }
+      ],
+      "actions": [
+        {
+          "stepIndex": 0,
+          "operation": "TYPE_TEXT",
+          "target": "Destination",
+          "confidence": 0.775,
+          "elapsedMs": 870,
+          "inferenceMs": 125,
+          "executeMs": 52
+        },
+        {
+          "stepIndex": 1,
+          "operation": "SELECT",
+          "target": "Category → Design",
+          "confidence": 0.1684,
+          "elapsedMs": 1231,
+          "inferenceMs": 144,
+          "executeMs": 39
+        },
+        {
+          "stepIndex": 2,
+          "operation": "PRESS_ENTER",
+          "target": "Destination",
+          "confidence": 0.3394,
+          "elapsedMs": 1581,
+          "inferenceMs": 146,
+          "executeMs": 41
+        },
+        {
+          "stepIndex": 2,
+          "operation": "CLICK",
+          "target": "Free cancellation",
+          "confidence": 0.7872,
+          "elapsedMs": 1887,
+          "inferenceMs": 161,
+          "executeMs": 38
+        },
+        {
+          "stepIndex": 3,
+          "operation": "CLICK",
+          "target": "Find stays",
+          "confidence": 0.5653,
+          "elapsedMs": 2250,
+          "inferenceMs": 162,
+          "executeMs": 36
+        },
+        {
+          "stepIndex": 4,
+          "operation": "CLICK",
+          "target": "View Casa Flora",
+          "confidence": 0.8139,
+          "elapsedMs": 2618,
+          "inferenceMs": 168,
+          "executeMs": 41
+        }
+      ],
+      "assertions": [
+        {
+          "passed": true,
+          "index": 0,
+          "message": "Assertion passed"
+        }
+      ],
+      "reason": null,
+      "elapsedMs": 2828,
+      "resume": null
+    }
+  ]
+}

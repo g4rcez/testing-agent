@@ -19,6 +19,7 @@ test("provider HTTP failures stop before an executable decision exists", async (
   try {
     const input = runSchema.parse({
       prompt: "Continue",
+      expect: [{ text: "App" }],
       steps: ["Click Continue"],
       session: "test",
       backend: { provider: "laya", baseUrl: String(server.url) },
@@ -68,6 +69,7 @@ test("rejects an invented target returned over the provider wire", async () => {
   try {
     const input = runSchema.parse({
       prompt: "Continue",
+      expect: [{ text: "App" }],
       steps: ["Click Continue"],
       session: "test",
       backend: { provider: "laya", baseUrl: String(server.url) },
@@ -83,6 +85,7 @@ test("rejects an invented target returned over the provider wire", async () => {
 test("an explicit field value requires no generation endpoint", async () => {
   const input = runSchema.parse({
     prompt: "Search",
+    expect: [{ text: "App" }],
     steps: [{ instruction: "Search Lisbon", value: "Lisbon" }],
     session: "test",
     backend: { provider: "laya" },

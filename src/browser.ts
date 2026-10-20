@@ -2,195 +2,162 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { Decision, Element, Observation, Target } from "./contracts.ts";
+import type { Decision, Observation } from "./contracts.ts";
+import { pageExpression, type PageRequest } from "./page.ts";
+import {
+  assertionExpression,
+  assertionResultSchema,
+  type AssertionResult,
+} from "./assertions.ts";
+import type { Assertion } from "./contracts.ts";
 
 const exec = promisify(execFile);
-const snapshotSchema = z.object({
-  snapshot: z.string().max(200_000),
-  origin: z.string(),
-  refs: z.record(
-    z.string().regex(/^e\d+$/),
-    z.object({ role: z.string(), name: z.string() }),
+const candidateSchema = z.object({
+  ref: z.string(),
+  label: z.string(),
+  role: z.string(),
+  value: z.string().optional(),
+  currentValue: z.string().optional(),
+  checked: z.string().optional(),
+});
+const observationSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  text: z.string().max(12_000),
+  tree: z.string().max(200_000),
+  elements: z.array(
+    z.object({
+      index: z.string(),
+      label: z.string(),
+      role: z.string(),
+      value: z.string(),
+      operations: z.array(z.string()),
+      checked: z.string().optional(),
+    }),
   ),
+  targets: z.record(z.string(), z.record(z.string(), candidateSchema)),
+  controls: z.array(z.string()),
+  documentId: z.uuid(),
+  snapshotId: z.uuid(),
 });
 const responseSchema = z.object({
   success: z.boolean(),
   data: z.unknown(),
   error: z.string().nullable().optional(),
 });
-const clickRoles = new Set([
-  "button",
-  "link",
-  "combobox",
-  "menuitem",
-  "menuitemcheckbox",
-  "menuitemradio",
-  "option",
-  "radio",
-  "switch",
-  "tab",
-  "treeitem",
-  "gridcell",
+const receiptSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("stale"), reason: z.string() }),
+  z.object({ status: z.enum(["executed", "uncertain"]), actionId: z.uuid() }),
 ]);
-
-export function parseSnapshot(input: unknown): Observation {
-  const data = snapshotSchema.parse(input);
-  const targets: Observation["targets"] = {};
-  const elements: Element[] = [];
-  const add = (operation: string, id: string, target: Target) => {
-    (targets[operation] ??= {})[id] = target;
-  };
-  let select: { ref: string; label: string; indent: number } | undefined;
-  for (const line of data.snapshot.split("\n")) {
-    const match = Array.from(line.matchAll(/\[([^\[\]]*\bref=(e\d+))\]/g)).at(
-      -1,
-    );
-    const ref = match?.[2];
-    const attributes = match?.[1] ?? "";
-    const element = ref ? data.refs[ref] : undefined;
-    const indent = line.length - line.trimStart().length;
-    if (select && indent <= select.indent) select = undefined;
-    if (!ref || !element || /\bdisabled(?:,|$)/.test(attributes)) continue;
-    const value =
-      match?.index === undefined
-        ? ""
-        : line
-            .slice(match.index + match[0].length)
-            .replace(/^:\s*/, "")
-            .trim();
-    const checked = attributes.match(/\bchecked=([^,]+)/)?.[1];
-    const target: Target = {
-      ref: `@${ref}`,
-      label: element.name,
-      role: element.role,
-      currentValue: value,
-      ...(checked === undefined ? {} : { checked }),
-    };
-    const descriptor: Element = {
-      index: ref,
-      label: element.name,
-      role: element.role,
-      value,
-      operations: [],
-      ...(checked === undefined ? {} : { checked }),
-    };
-    elements.push(descriptor);
-    if (element.role === "option" && select) {
-      if (!/\bselected(?:,|$)/.test(attributes) && !line.includes("[selected]"))
-        add("SELECT", `${select.ref}:${ref}`, {
-          ref: select.ref,
-          label: `${select.label} → ${element.name}`,
-          value: element.name,
-          role: "combobox",
-        });
-      continue;
-    }
-    if (element.role === "combobox" || element.role === "listbox")
-      select = { ...target, indent };
-    if (clickRoles.has(element.role)) add("CLICK", ref, target);
-    if (
-      ["textbox", "searchbox", "spinbutton", "combobox"].includes(
-        element.role,
-      ) &&
-      !/\breadonly(?:,|$)/.test(attributes)
-    )
-      add("TYPE_TEXT", ref, target);
-    if (element.role === "checkbox") {
-      if (!/\bchecked(?:=true)?(?:,|$)/.test(attributes))
-        add("CHECK", ref, target);
-      if (!attributes.includes("checked=false")) add("UNCHECK", ref, target);
-    }
-  }
-  for (const element of elements) {
-    element.operations = Object.entries(targets)
-      .filter(([, choices]) =>
-        Object.values(choices).some(
-          (target) => target.ref === `@${element.index}`,
-        ),
-      )
-      .map(([operation]) => operation);
-  }
-  return {
-    url: data.origin,
-    tree: data.snapshot,
-    targets,
-    elements,
-    fingerprint: createHash("sha256")
-      .update(JSON.stringify(data))
-      .digest("hex"),
-  };
-}
+export class StaleDecisionError extends Error {}
+export class BrowserDeadlineError extends Error {}
 
 export class Browser {
   constructor(
     readonly session: string,
     readonly deadline: number,
+    readonly signal?: AbortSignal,
   ) {}
 
-  async command(args: string[]): Promise<unknown> {
+  async command(args: string[], stdin?: string): Promise<unknown> {
     const remaining = this.deadline - Date.now();
-    if (remaining <= 0) throw new Error("Call deadline reached");
+    if (remaining <= 0)
+      throw new BrowserDeadlineError("Browser call deadline reached");
     let stdout: string;
     try {
-      ({ stdout } = await exec(
+      const pending = exec(
         process.env.AGENT_BROWSER_BIN ?? "agent-browser",
         ["--session", this.session, "--json", ...args],
         {
           timeout: Math.min(12_000, remaining),
           maxBuffer: 2_000_000,
           encoding: "utf8",
+          ...(this.signal ? { signal: this.signal } : {}),
         },
-      ));
-    } catch {
-      throw new Error(
-        `agent-browser ${args[0]} failed or timed out; inspect the browser before retrying input`,
       );
+      if (stdin !== undefined) pending.child.stdin?.end(stdin);
+      ({ stdout } = await pending);
+    } catch {
+      if (this.signal?.aborted) throw new Error("Run cancelled");
+      if (Date.now() >= this.deadline)
+        throw new BrowserDeadlineError("Browser call deadline reached");
+      throw new Error("agent-browser " + args[0] + " failed or timed out");
     }
     const response = responseSchema.parse(JSON.parse(stdout));
     if (!response.success)
-      throw new Error(`agent-browser ${args[0]} rejected the command`);
+      throw new Error("agent-browser " + args[0] + " rejected the command");
     return response.data;
   }
 
+  async evaluate(request: PageRequest): Promise<unknown> {
+    return z
+      .object({ result: z.unknown() })
+      .parse(await this.command(["eval", "--stdin"], pageExpression(request)))
+      .result;
+  }
+
   async observe(): Promise<Observation> {
-    return parseSnapshot(await this.command(["snapshot"]));
+    const result = observationSchema.parse(
+      await this.evaluate({ type: "observe" }),
+    );
+    const { snapshotId, ...semantic } = result;
+    return {
+      ...result,
+      fingerprint: createHash("sha256")
+        .update(JSON.stringify(semantic))
+        .digest("hex"),
+    };
   }
 
   async execute(decision: Decision, text?: string): Promise<void> {
-    const ref = decision.target?.ref;
-    switch (decision.operation) {
-      case "CLICK":
-      case "CHECK":
-      case "UNCHECK":
-        if (!ref) throw new Error("Missing observed target");
-        await this.command([decision.operation.toLowerCase(), ref]);
-        return;
-      case "TYPE_TEXT":
-        if (!ref || text === undefined) throw new Error("Missing field value");
-        await this.command(["fill", ref, text]);
-        return;
-      case "SELECT":
-        if (!ref || decision.target?.value === undefined)
-          throw new Error("Missing observed option");
-        await this.command(["select", ref, decision.target.value]);
-        return;
-      case "PRESS_ENTER":
-        await this.command(["press", "Enter"]);
-        return;
-      case "SCROLL_DOWN":
-        await this.command(["scroll", "down", "500"]);
-        return;
-      case "SCROLL_UP":
-        await this.command(["scroll", "up", "500"]);
-        return;
-      case "WAIT":
-        await this.command([
-          "eval",
-          "new Promise(resolve => { const observer = new MutationObserver(() => { observer.disconnect(); clearTimeout(timer); resolve('changed'); }); const timer = setTimeout(() => { observer.disconnect(); resolve('unchanged'); }, 500); observer.observe(document.documentElement, {subtree:true, childList:true, characterData:true, attributes:true}); })",
-        ]);
-        return;
-      default:
-        throw new Error("Unsupported operation");
-    }
+    if (!decision.snapshotId)
+      throw new Error("Decision has no bound observation");
+    const receipt = receiptSchema.parse(
+      await this.evaluate({
+        type: "execute",
+        snapshotId: decision.snapshotId,
+        actionId: decision.actionId ?? crypto.randomUUID(),
+        operation: decision.operation,
+        targetId: decision.targetId,
+        text,
+        expectedSelector: decision.expectedSelector,
+      }),
+    );
+    if (receipt.status === "stale")
+      throw new StaleDecisionError(receipt.reason);
+    if (receipt.status !== "executed")
+      throw new Error("Browser input was interrupted");
+  }
+
+  async receipt(
+    actionId: string,
+  ): Promise<"executed" | "uncertain" | "unknown"> {
+    const result = await this.evaluate({ type: "receipt", actionId });
+    return result === null
+      ? "unknown"
+      : z.object({ status: z.enum(["executed", "uncertain"]) }).parse(result)
+          .status;
+  }
+
+  async assert(assertions: Assertion[]): Promise<AssertionResult> {
+    const requested = Math.max(...assertions.map((item) => item.timeoutMs));
+    const timeout = Math.max(
+      0,
+      Math.min(requested, this.deadline - Date.now() - 200),
+    );
+    const data = z
+      .object({ result: z.unknown() })
+      .parse(
+        await this.command(
+          ["eval", "--stdin"],
+          assertionExpression(assertions, timeout),
+        ),
+      );
+    const result = assertionResultSchema.parse(data.result);
+    if (!result.passed && timeout < requested)
+      throw new BrowserDeadlineError(
+        "Call deadline interrupted assertion evaluation",
+      );
+    return result;
   }
 }

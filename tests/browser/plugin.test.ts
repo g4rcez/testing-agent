@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { z } from "zod";
 
 const exec = promisify(execFile);
+const controller = process.env.AGENT_BROWSER_BIN ?? "agent-browser";
 const criterionSchema = z.union([
   z.string(),
   z.object({ element: z.string() }).passthrough(),
@@ -16,14 +17,26 @@ const questionSchema = z.object({
   instructions: z
     .object({
       goal: z.string(),
-      initial_prompt: z.string(),
-      steps: z.array(z.string()),
-      current_step_number: z.number(),
+      original_request: z.string(),
     })
     .passthrough(),
 });
 const requestSchema = z.object({
-  state: z.object({ page: z.object({ text: z.string() }) }),
+  state: z.object({
+    task: z.object({
+      prompt: z.string(),
+      steps: z.array(z.string()),
+      current_step_number: z.number(),
+    }),
+    page: z.object({ text: z.string() }),
+    elements: z.array(
+      z.object({
+        label: z.string(),
+        value: z.string(),
+        checked: z.string().optional(),
+      }),
+    ),
+  }),
   questions: z.record(z.string(), questionSchema),
 });
 const resultSchema = z.object({
@@ -68,20 +81,28 @@ for (const provider of ["jev", "laya"] as const) {
         const operationQuestion = body.questions.operation;
         if (!operationQuestion)
           return new Response("Missing operation", { status: 400 });
-        const index = operationQuestion.instructions.current_step_number;
-        expect(operationQuestion.instructions.initial_prompt).toBe(
+        const index = body.state.task.current_step_number;
+        expect(body.state.task.prompt).toBe(
           "Find Casa Flora using these filters and open its details.",
         );
-        expect(operationQuestion.instructions.steps).toHaveLength(5);
+        expect(body.state.task.steps).toHaveLength(5);
         visitedSteps.push(index);
         auth.push(request.headers.get("authorization"));
         const tree = body.state.page.text;
         const complete = [
           false,
-          /textbox "Destination"[^\n]*: Lisbon/.test(tree),
-          /combobox "Category"[^\n]*: Design/.test(tree),
-          /checkbox "Free cancellation"[^\n]*checked(?:=true)?(?:,|\])/.test(
-            tree,
+          body.state.elements.some(
+            (element) =>
+              element.label === "Destination" && element.value === "Lisbon",
+          ),
+          body.state.elements.some(
+            (element) =>
+              element.label === "Category" && element.value === "Design",
+          ),
+          body.state.elements.some(
+            (element) =>
+              element.label === "Free cancellation" &&
+              element.checked === "true",
           ),
           tree.includes("1 matching stay"),
           tree.includes(
@@ -92,7 +113,7 @@ for (const provider of ["jev", "laya"] as const) {
           "",
           "TYPE_TEXT",
           "SELECT",
-          "CHECK",
+          "CLICK",
           "CLICK",
           "CLICK",
         ];
@@ -143,7 +164,7 @@ for (const provider of ["jev", "laya"] as const) {
       JEV_TEST_API_KEY: "test-only",
     };
     const command = async (args: string[]) => {
-      const result = await exec("agent-browser", [...args, "--json"], {
+      const result = await exec(controller, [...args, "--json"], {
         cwd: resolve(import.meta.dir, "../.."),
         env,
         timeout: 55_000,
@@ -222,11 +243,11 @@ for (const provider of ["jev", "laya"] as const) {
       expect(result.data.actions.map((action) => action.operation)).toEqual([
         "TYPE_TEXT",
         "SELECT",
-        "CHECK",
+        "CLICK",
         "CLICK",
         "CLICK",
       ]);
-      expect(visitedSteps).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+      expect(visitedSteps).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5]);
       expect(auth.every((value) => value === "Bearer test-only")).toBe(true);
       expect(textRequests).toBe(provider === "laya" ? 1 : 0);
       const final = z

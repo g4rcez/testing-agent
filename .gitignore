@@ -2,3 +2,7 @@ node_modules/
 .env
 .agent-browser-jev/
 artifacts/
+.venv/
+dist/
+*.tgz
+__pycache__/

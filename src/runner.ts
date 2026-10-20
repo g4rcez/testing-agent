@@ -1,23 +1,74 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { watch } from "node:fs";
 import { z } from "zod";
-import { Browser } from "./browser.ts";
+import {
+  Browser,
+  StaleDecisionError,
+  BrowserDeadlineError,
+} from "./browser.ts";
 import { backendConfig, decide, fieldValue } from "./decision.ts";
-import { runSchema, type Observation, type RunInput } from "./contracts.ts";
+import {
+  runSchema,
+  type Observation,
+  type RunInput,
+  type Decision,
+  type Assertion,
+} from "./contracts.ts";
+import type { AssertionResult } from "./assertions.ts";
+import {
+  acquireSession,
+  atomicWrite,
+  cancelPath,
+  readState,
+  statePath,
+  requestCancellation,
+  SessionBusyError,
+} from "./store.ts";
 
+const targetSchema = z.object({
+  ref: z.string(),
+  label: z.string(),
+  role: z.string().optional(),
+  value: z.string().optional(),
+  currentValue: z.string().optional(),
+  checked: z.string().optional(),
+});
+const decisionSchema = z.object({
+  operation: z.string(),
+  target: targetSchema.optional(),
+  confidence: z.number(),
+  targetConfidence: z.number().optional(),
+  snapshotId: z.string().optional(),
+  targetId: z.string().optional(),
+  actionId: z.string().optional(),
+  model: z.string().optional(),
+});
 const actionSchema = z.object({
   stepIndex: z.number().int(),
   operation: z.string(),
   target: z.string().optional(),
   confidence: z.number(),
   elapsedMs: z.number(),
+  inferenceMs: z.number(),
+  executeMs: z.number(),
+  model: z.string().optional(),
 });
 const stateSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   runId: z.uuid(),
   session: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/),
   input: runSchema,
-  status: z.enum(["running", "paused", "blocked", "completed", "uncertain"]),
+  status: z.enum([
+    "running",
+    "paused",
+    "blocked",
+    "failed",
+    "cancelled",
+    "completed",
+    "uncertain",
+  ]),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  endedAt: z.number().nullable(),
   stepIndex: z.number().int().min(0),
   stepDecisions: z.number().int().min(0),
   actions: z.array(actionSchema),
@@ -27,66 +78,76 @@ const stateSchema = z.object({
       verification: z.enum(["model", "assertion"]),
     }),
   ),
-  pendingAction: z.string().nullable(),
+  pendingAction: z
+    .object({
+      actionId: z.uuid(),
+      decision: decisionSchema,
+      inferenceMs: z.number(),
+      startedAt: z.number(),
+    })
+    .nullable(),
   reason: z.string().nullable(),
   unchangedActions: z.number().int().min(0),
   staleDecisions: z.number().int().min(0),
+  assertions: z.array(
+    z.object({ passed: z.boolean(), index: z.number(), message: z.string() }),
+  ),
 });
 export type RunState = z.infer<typeof stateSchema>;
+type BrowserPort = Pick<Browser, "command" | "observe" | "execute"> &
+  Partial<Pick<Browser, "receipt" | "assert">>;
 export type RunnerDependencies = {
   browser: (
     session: string,
     deadline: number,
-  ) => Pick<Browser, "command" | "observe" | "execute">;
+    signal?: AbortSignal,
+  ) => BrowserPort;
   decide: typeof decide;
   fieldValue: typeof fieldValue;
 };
 const defaults: RunnerDependencies = {
-  browser: (session, deadline) => new Browser(session, deadline),
+  browser: (session, deadline, signal) =>
+    new Browser(session, deadline, signal),
   decide,
   fieldValue,
 };
-const root = () => resolve(process.env.JEV_STATE_DIR ?? ".agent-browser-jev");
-const file = (runId: string) =>
-  resolve(root(), `${z.uuid().parse(runId)}.json`);
 
 export async function saveRun(state: RunState): Promise<void> {
-  await mkdir(root(), { recursive: true, mode: 0o700 });
-  const path = file(state.runId);
-  const temp = `${path}.${crypto.randomUUID()}.tmp`;
-  await writeFile(temp, JSON.stringify(state, null, 2), { mode: 0o600 });
-  await rename(temp, path);
+  state.updatedAt = Date.now();
+  await atomicWrite(statePath(state.runId), state);
 }
-
 export async function loadRun(runId: string): Promise<RunState> {
-  return stateSchema.parse(JSON.parse(await readFile(file(runId), "utf8")));
+  return stateSchema.parse(await readState(runId));
 }
-
 export function summarize(state: RunState) {
   return {
     runId: state.runId,
     session: state.session,
+    name: state.input.name,
     status: state.status,
     currentStep:
-      state.stepIndex + 1 <= state.input.steps.length
-        ? state.stepIndex + 1
-        : null,
+      state.stepIndex < state.input.steps.length ? state.stepIndex + 1 : null,
     totalSteps: state.input.steps.length,
     completedSteps: state.completedSteps,
     actions: state.actions,
+    assertions: state.assertions,
     reason: state.reason,
+    elapsedMs: (state.endedAt ?? Date.now()) - state.createdAt,
     resume:
       state.status === "paused"
         ? { type: "agent.resume", request: { runId: state.runId } }
         : null,
   };
 }
-
 export function assertCompletion(
   observation: Observation,
-  expected: RunInput["steps"][number]["expect"],
+  expected: Assertion | undefined,
 ): boolean {
   if (!expected) return true;
+  if (expected.selector !== undefined)
+    throw new Error(
+      "Element assertions require the real browser assertion evaluator",
+    );
   const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
   return (
     (expected.text === undefined ||
@@ -94,19 +155,35 @@ export function assertCompletion(
     (expected.url === undefined || observation.url === expected.url)
   );
 }
-
+async function evaluateAssertions(
+  browser: BrowserPort,
+  assertions: Assertion[],
+): Promise<AssertionResult> {
+  if (browser.assert) return browser.assert(assertions);
+  const observation = await browser.observe();
+  const checks = assertions.map((assertion, index) => ({
+    index,
+    passed: assertCompletion(observation, assertion),
+    message: "Expected frontend state was not observed",
+  }));
+  return { passed: checks.every((check) => check.passed), checks };
+}
 export async function startRun(
   input: RunInput,
   dependencies: RunnerDependencies = defaults,
 ): Promise<RunState> {
   backendConfig(input.backend);
   const runId = crypto.randomUUID();
+  const now = Date.now();
   const state: RunState = {
-    version: 1,
+    version: 2,
     runId,
-    session: input.session ?? `jev-${runId}`,
+    session: input.session ?? "jev-" + runId,
     input,
     status: "paused",
+    createdAt: now,
+    updatedAt: now,
+    endedAt: null,
     stepIndex: 0,
     stepDecisions: 0,
     actions: [],
@@ -115,124 +192,228 @@ export async function startRun(
     reason: null,
     unchangedActions: 0,
     staleDecisions: 0,
+    assertions: [],
   };
+  await atomicWrite(cancelPath(runId), 0);
   await saveRun(state);
-  return executeRun(state, dependencies, input.url);
+  return executeRun(state, dependencies, false, input.url);
 }
-
 export async function resumeRun(
   runId: string,
   dependencies: RunnerDependencies = defaults,
 ): Promise<RunState> {
   const state = await loadRun(runId);
-  if (state.status !== "paused" && state.status !== "running") return state;
-  return executeRun(state, dependencies);
+  if (!["paused", "running"].includes(state.status)) return state;
+  return executeRun(state, dependencies, false);
 }
-
+export async function recoverRun(
+  runId: string,
+  dependencies: RunnerDependencies = defaults,
+): Promise<RunState> {
+  return executeRun(await loadRun(runId), dependencies, true);
+}
+export async function cancelRun(runId: string) {
+  const state = await loadRun(runId);
+  if (!["paused", "running"].includes(state.status)) return summarize(state);
+  await requestCancellation(runId);
+  if (state.status === "paused") {
+    let release: () => void;
+    try {
+      release = await acquireSession(state.session, runId);
+    } catch (error) {
+      if (error instanceof SessionBusyError)
+        return { runId, status: "cancelling" };
+      throw error;
+    }
+    try {
+      const current = await loadRun(runId);
+      current.status = "cancelled";
+      current.reason = "Cancelled by user";
+      current.endedAt = Date.now();
+      await saveRun(current);
+      return summarize(current);
+    } finally {
+      release();
+    }
+  }
+  return { runId, status: "cancelling" };
+}
+function recordAction(
+  state: RunState,
+  pending: NonNullable<RunState["pendingAction"]>,
+) {
+  state.actions.push({
+    stepIndex: state.stepIndex,
+    operation: pending.decision.operation,
+    ...(pending.decision.target
+      ? { target: pending.decision.target.label }
+      : {}),
+    ...(pending.decision.model ? { model: pending.decision.model } : {}),
+    confidence: pending.decision.confidence,
+    elapsedMs: Date.now() - state.createdAt,
+    inferenceMs: pending.inferenceMs,
+    executeMs: Date.now() - pending.startedAt,
+  });
+}
 async function executeRun(
   initial: RunState,
   dependencies: RunnerDependencies,
+  recover: boolean,
   url?: string,
 ): Promise<RunState> {
-  await mkdir(root(), { recursive: true, mode: 0o700 });
-  const lock = resolve(root(), `session-${initial.session}.lock`);
+  const release = await acquireSession(initial.session, initial.runId, recover);
+  const controller = new AbortController();
+  const totalDeadline = initial.createdAt + initial.input.totalTimeoutMs;
+  const callDeadline = Math.min(
+    Date.now() + initial.input.timeoutMs,
+    totalDeadline,
+  );
+  const timeout = setTimeout(
+    () => controller.abort("deadline"),
+    Math.max(0, callDeadline - Date.now()),
+  );
+  let watcher: ReturnType<typeof watch> | undefined;
   try {
-    await mkdir(lock);
-  } catch {
-    throw new Error(
-      "This browser session is already running, or its lock needs inspection after an interrupted process",
-    );
-  }
-  try {
-    // Re-read after acquiring the lock so concurrent resumes cannot replay old state.
+    watcher = watch(cancelPath(initial.runId), () => {
+      void Bun.file(cancelPath(initial.runId))
+        .text()
+        .then((value) => {
+          if (value.trim() === "1") controller.abort("cancelled");
+        })
+        .catch(() => controller.abort("cancelled"));
+    });
     const state = await loadRun(initial.runId);
+    if ((await Bun.file(cancelPath(state.runId)).text()).trim() === "1")
+      controller.abort("cancelled");
+    const browser = dependencies.browser(
+      state.session,
+      callDeadline,
+      controller.signal,
+    );
     if (state.pendingAction) {
-      state.status = "uncertain";
-      state.reason =
-        "A previous process stopped during browser input. Inspect the app before starting a new run.";
-      await saveRun(state);
-      return state;
+      const receipt = browser.receipt
+        ? await browser
+            .receipt(state.pendingAction.actionId)
+            .catch(() => "unknown")
+        : "unknown";
+      if (recover && receipt === "executed") {
+        recordAction(state, state.pendingAction);
+        state.pendingAction = null;
+        state.status = "paused";
+      } else {
+        state.status = "uncertain";
+        state.reason =
+          "Interrupted input has no confirmed execution receipt; automatic replay is disabled";
+        state.endedAt = Date.now();
+        await saveRun(state);
+        return state;
+      }
     }
-    if (["completed", "blocked", "uncertain"].includes(state.status))
-      return state;
-    const started = Date.now();
-    const deadline = started + state.input.timeoutMs;
-    const browser = dependencies.browser(state.session, deadline);
+    if (!["running", "paused"].includes(state.status)) return state;
     state.status = "running";
     state.reason = null;
+    state.endedAt = null;
     await saveRun(state);
     let executed = 0;
     try {
       if (url) {
-        state.pendingAction = "OPEN";
+        state.pendingAction = {
+          actionId: crypto.randomUUID(),
+          decision: { operation: "OPEN", confidence: 1 },
+          inferenceMs: 0,
+          startedAt: Date.now(),
+        };
         await saveRun(state);
         await browser.command(["open", url]);
         state.pendingAction = null;
         await saveRun(state);
       }
       while (state.stepIndex < state.input.steps.length) {
+        if (controller.signal.aborted) throw new Error("Run interrupted");
         if (
-          deadline - Date.now() < 2000 ||
+          callDeadline - Date.now() < 300 ||
           executed >= state.input.actionsPerCall
         ) {
           state.status = "paused";
-          state.reason =
-            "Call budget reached; resume to continue the same step list";
+          state.reason = "Call budget reached; resume to continue";
           break;
         }
         if (state.stepDecisions >= state.input.maxStepDecisions) {
           state.status = "blocked";
-          state.reason =
-            "Run action budget or current-step decision budget reached";
+          state.reason = "Current-step decision budget reached";
           break;
         }
         const step = state.input.steps[state.stepIndex];
         if (!step) throw new Error("Missing current step");
         const observed = await browser.observe();
-        state.stepDecisions += 1;
+        const completionAssertions = step.expect
+          ? [step.expect]
+          : state.stepIndex === state.input.steps.length - 1
+            ? state.input.expect
+            : undefined;
+        if (completionAssertions) {
+          const currentCompletion = await evaluateAssertions(
+            browser,
+            completionAssertions.map((assertion) => ({
+              ...assertion,
+              timeoutMs: 0,
+            })),
+          );
+          if (currentCompletion.passed && step.expect) {
+            state.completedSteps.push({
+              instruction: step.instruction,
+              verification: "assertion",
+            });
+            state.stepIndex++;
+            state.stepDecisions = 0;
+            state.unchangedActions = 0;
+            state.staleDecisions = 0;
+            await saveRun(state);
+            continue;
+          }
+          if (!currentCompletion.passed && observed.controls)
+            observed.controls = observed.controls.filter(
+              (operation) => operation !== "DONE",
+            );
+        }
+        state.stepDecisions++;
         await saveRun(state);
+        const inferenceStarted = Date.now();
         const decision = await dependencies.decide(
           state.input,
           state.stepIndex,
           observed,
           state.actions,
-          deadline,
+          callDeadline,
+          controller.signal,
         );
-        const text =
-          decision.operation === "TYPE_TEXT"
-            ? await dependencies.fieldValue(
-                state.input,
-                step,
-                observed,
-                decision,
-                deadline,
-              )
-            : undefined;
-        const current = await browser.observe();
-        if (current.fingerprint !== observed.fingerprint) {
-          state.staleDecisions += 1;
-          if (state.staleDecisions >= 6) {
-            state.status = "blocked";
-            state.reason = "The frontend kept changing during decisions";
-            break;
-          }
-          continue;
-        }
-        state.staleDecisions = 0;
+        const inferenceMs = Date.now() - inferenceStarted;
         if (decision.operation === "DONE") {
-          if (!assertCompletion(current, step.expect)) {
-            state.status = "blocked";
-            state.reason =
-              "The model reported DONE, but the current step's expected text or URL was not present";
-            break;
+          const current = await browser.observe();
+          if (current.fingerprint !== observed.fingerprint) {
+            state.staleDecisions++;
+            if (state.staleDecisions >= 6)
+              throw new Error("Frontend kept changing during decisions");
+            continue;
+          }
+          if (step.expect) {
+            const result = await evaluateAssertions(browser, [step.expect]);
+            if (!result.passed) {
+              state.status = "failed";
+              state.reason =
+                "The model reported DONE, but current-step assertions failed";
+              state.assertions = result.checks;
+              break;
+            }
           }
           state.completedSteps.push({
             instruction: step.instruction,
             verification: step.expect ? "assertion" : "model",
           });
-          state.stepIndex += 1;
+          state.stepIndex++;
           state.stepDecisions = 0;
           state.unchangedActions = 0;
+          state.staleDecisions = 0;
           await saveRun(state);
           continue;
         }
@@ -247,19 +428,48 @@ async function executeRun(
           state.reason = "Run action budget reached";
           break;
         }
-        state.pendingAction = decision.operation;
+        const text =
+          decision.operation === "TYPE_TEXT"
+            ? await dependencies.fieldValue(
+                state.input,
+                step,
+                observed,
+                decision,
+                callDeadline,
+                controller.signal,
+              )
+            : undefined;
+        const actionId = crypto.randomUUID();
+        state.pendingAction = {
+          actionId,
+          decision: { ...decision, actionId },
+          inferenceMs,
+          startedAt: Date.now(),
+        };
         await saveRun(state);
-        await browser.execute(decision, text);
-        state.actions.push({
-          stepIndex: state.stepIndex,
-          operation: decision.operation,
-          ...(decision.target ? { target: decision.target.label } : {}),
-          confidence: decision.confidence,
-          elapsedMs: Date.now() - started,
-        });
+        try {
+          await browser.execute(
+            {
+              ...decision,
+              actionId,
+              ...(step.selector ? { expectedSelector: step.selector } : {}),
+            },
+            text,
+          );
+        } catch (error) {
+          if (!(error instanceof StaleDecisionError)) throw error;
+          state.pendingAction = null;
+          state.staleDecisions++;
+          await saveRun(state);
+          if (state.staleDecisions >= 6)
+            throw new Error("Selected targets kept changing before dispatch");
+          continue;
+        }
+        recordAction(state, state.pendingAction);
         state.pendingAction = null;
+        state.staleDecisions = 0;
         await saveRun(state);
-        executed += 1;
+        executed++;
         const after = await browser.observe();
         state.unchangedActions =
           after.fingerprint === observed.fingerprint
@@ -271,19 +481,50 @@ async function executeRun(
           break;
         }
       }
-      if (state.stepIndex === state.input.steps.length)
-        state.status = "completed";
+      if (state.stepIndex === state.input.steps.length) {
+        const expected =
+          state.input.expect ??
+          (state.input.steps.at(-1)?.expect
+            ? [state.input.steps.at(-1)?.expect].filter(
+                (item): item is Assertion => item !== undefined,
+              )
+            : []);
+        if (!expected.length)
+          throw new Error("No deterministic final assertions were configured");
+        const result = await evaluateAssertions(browser, expected);
+        state.assertions = result.checks;
+        state.status = result.passed ? "completed" : "failed";
+        state.reason = result.passed ? null : "Final test assertions failed";
+      }
     } catch (error) {
-      state.status = state.pendingAction ? "uncertain" : "blocked";
-      state.reason = state.pendingAction
-        ? "Browser input was interrupted; its effect is unknown. Inspect the app before starting a new run."
-        : error instanceof Error
-          ? error.message
-          : "Run failed";
+      if (state.pendingAction) {
+        state.status = "uncertain";
+        state.reason =
+          "Input acknowledgement was interrupted; recover checks a receipt without replaying input";
+      } else if (controller.signal.reason === "cancelled") {
+        state.status = "cancelled";
+        state.reason = "Cancelled by user";
+      } else if (Date.now() >= totalDeadline) {
+        state.status = "failed";
+        state.reason = "Total test deadline exceeded";
+      } else if (
+        controller.signal.aborted ||
+        error instanceof BrowserDeadlineError
+      ) {
+        state.status = "paused";
+        state.reason = "Call deadline reached; resume to continue";
+      } else {
+        state.status = "blocked";
+        state.reason = error instanceof Error ? error.message : "Run failed";
+      }
     }
+    if (!["running", "paused"].includes(state.status))
+      state.endedAt = Date.now();
     await saveRun(state);
     return state;
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    watcher?.close();
+    clearTimeout(timeout);
+    release();
   }
 }

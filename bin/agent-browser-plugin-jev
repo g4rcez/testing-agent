@@ -1,2 +1,2 @@
 #!/usr/bin/env bun
-import "../src/plugin.ts";
+import "../dist/plugin.js";
