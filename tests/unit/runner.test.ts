@@ -87,7 +87,6 @@ test("resumes the same ordered steps without repeating acknowledged browser inpu
 test("discards a stale decision before any input", async () => {
   let observations = 0;
   let predictions = 0;
-  let executed = 0;
   const result = await startRun(
     { ...input(), steps: [{ instruction: "Open result" }] },
     {
@@ -103,7 +102,8 @@ test("discards a stale decision before any input", async () => {
     },
   );
   expect(result.status).toBe("completed");
-  expect(executed).toBe(0);
+  expect(result.actions).toHaveLength(0);
+  expect(result.pendingAction).toBeNull();
   expect(predictions).toBe(2);
 });
 

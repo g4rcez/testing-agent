@@ -22,6 +22,7 @@ export function pageBridge(request: PageRequest): unknown {
   };
   type Bound = {
     node: HTMLElement;
+    option?: HTMLOptionElement | undefined;
     guard: string;
     candidate: Candidate;
     operation: string;
@@ -169,6 +170,16 @@ export function pageBridge(request: PageRequest): unknown {
       node.getAttribute("aria-readonly"),
       "readOnly" in node ? node.readOnly : null,
       disabled(node),
+      node instanceof HTMLSelectElement
+        ? Array.from(node.options).map((option) => [
+            id(option),
+            option.value,
+            option.label,
+            option.selected,
+            option.disabled,
+            Boolean(option.closest("optgroup[disabled]")),
+          ])
+        : null,
       node
         .closest('form,dialog,article,li,tr,[role="dialog"],[role="row"]')
         ?.textContent?.slice(0, 6000) ??
@@ -227,6 +238,10 @@ export function pageBridge(request: PageRequest): unknown {
         !visible(bound.node) ||
         disabled(bound.node) ||
         guard(bound.node) !== bound.guard ||
+        (bound.option &&
+          (!bound.option.isConnected ||
+            bound.option.disabled ||
+            Boolean(bound.option.closest("optgroup[disabled]")))) ||
         !hit(bound.node))
     )
       return { status: "stale", reason: "target-changed-or-covered" };
@@ -332,13 +347,11 @@ export function pageBridge(request: PageRequest): unknown {
         case "SELECT":
           if (
             !(node instanceof HTMLSelectElement) ||
-            !Array.from(node.options).some(
-              (option) =>
-                option.value === bound?.candidate.value && !option.disabled,
-            )
+            !bound?.option ||
+            node.options[bound.option.index] !== bound.option
           )
             throw new Error("Unsupported option");
-          node.value = bound?.candidate.value ?? "";
+          node.selectedIndex = bound.option.index;
           node.dispatchEvent(
             new Event("input", { bubbles: true, composed: true }),
           );
@@ -390,12 +403,14 @@ export function pageBridge(request: PageRequest): unknown {
     targetId: string,
     node: HTMLElement,
     candidate: Candidate,
+    option?: HTMLOptionElement,
   ) => {
     (targets[operation] ??= {})[targetId] = candidate;
     boundTargets.set(`${operation}:${targetId}`, {
       node,
       operation,
       candidate,
+      option,
       guard: guard(node),
     });
   };
@@ -444,11 +459,17 @@ export function pageBridge(request: PageRequest): unknown {
           !option.disabled &&
           !option.closest("optgroup[disabled]")
         ) {
-          add("SELECT", `${nodeId}:${index}`, node, {
-            ...candidate,
-            label: `${label} → ${option.label}`,
-            value: option.value,
-          });
+          add(
+            "SELECT",
+            `${nodeId}:${index}`,
+            node,
+            {
+              ...candidate,
+              label: `${label} → ${option.label}`,
+              value: option.value,
+            },
+            option,
+          );
         }
       operations.push("SELECT");
     } else if (node instanceof HTMLInputElement && node.type === "checkbox") {

@@ -98,6 +98,52 @@ test("rejects changed form values after a decision", async () => {
   );
 });
 
+test("selects the observed option when options share a value", async () => {
+  await browser.command([
+    "eval",
+    '(() => { const options=document.querySelector("select").options; options[1].value="shared"; options[2].value="shared"; })()',
+  ]);
+  await browser.execute(
+    choice(await browser.observe(), "SELECT", "Category → Nature"),
+  );
+  expect(
+    await browser.command([
+      "eval",
+      'document.querySelector("select").selectedOptions[0].textContent',
+    ]),
+  ).toMatchObject({ result: "Nature" });
+});
+
+for (const mutation of ["swap-values", "replace-option", "disable-group"]) {
+  test(`rejects a dropdown choice after ${mutation} without emitting input`, async () => {
+    await browser.command([
+      "eval",
+      '(() => { const select=document.querySelector("select"); select.innerHTML="<option>All</option><optgroup label=Styles><option value=Design>Design</option><option value=Nature>Nature</option></optgroup>"; document.body.dataset.events="0"; for(const type of ["input","change"]) select.addEventListener(type,()=>document.body.dataset.events=String(Number(document.body.dataset.events)+1)); })()',
+    ]);
+    const selected = choice(
+      await browser.observe(),
+      "SELECT",
+      "Category → Design",
+    );
+    const script =
+      mutation === "swap-values"
+        ? 'const options=document.querySelector("select").options; options[1].value="Nature"; options[2].value="Design";'
+        : mutation === "replace-option"
+          ? 'const option=document.querySelector("select").options[1]; option.replaceWith(option.cloneNode(true));'
+          : 'document.querySelector("optgroup").disabled=true;';
+    await browser.command(["eval", `(() => { ${script} })()`]);
+    await expect(browser.execute(selected)).rejects.toBeInstanceOf(
+      StaleDecisionError,
+    );
+    expect(
+      await browser.command([
+        "eval",
+        '({selected:document.querySelector("select").selectedOptions[0].textContent,events:document.body.dataset.events})',
+      ]),
+    ).toMatchObject({ result: { selected: "All", events: "0" } });
+  });
+}
+
 test("an acknowledged action id cannot execute twice", async () => {
   await browser.command([
     "eval",
