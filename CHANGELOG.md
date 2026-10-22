@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.2 — testing-agent
+
+- Rename the npm package and GitHub repository to `testing-agent` without resetting the existing release history.
+- Add the `testing-agent` command and keep all existing CLI and plugin aliases.
+- Verify the exact public npm version, source revision, and archive integrity before creating its GitHub release.
+
 ## 0.0.1 — agent-tester
 
 First publication under the `agent-tester` package name. Earlier entries describe development versions before this package was published.

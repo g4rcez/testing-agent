@@ -1,10 +1,10 @@
 # Use --session with an existing browser that you signed into manually.
 # This changes your GitHub account: it stars the repository.
 # Already-starred repositories pass without toggling the star off.
-name: Star agent-browser-jev on GitHub
-url: https://github.com/g4rcez/agent-browser-jev
+name: Star testing-agent on GitHub
+url: https://github.com/g4rcez/testing-agent
 prompt: >-
-  Star the g4rcez/agent-browser-jev repository on GitHub.
+  Star the g4rcez/testing-agent repository on GitHub.
   If it is already starred, leave it starred. Do not click Unstar,
   sign in, enter credentials, or interact with other account controls.
 backend:
@@ -14,11 +14,11 @@ maxStepDecisions: 5
 steps:
   - instruction: Click Star this repository if it is not already starred; never click Unstar
     expect:
-      selector: 'form[action="/g4rcez/agent-browser-jev/unstar"] button[aria-label^="Unstar this repository"]'
+      selector: 'form[action="/g4rcez/testing-agent/unstar"] button[aria-label^="Unstar this repository"]'
       visible: true
       timeoutMs: 10000
 expect:
-  - url: https://github.com/g4rcez/agent-browser-jev
-    selector: 'form[action="/g4rcez/agent-browser-jev/unstar"] button[aria-label^="Unstar this repository"]'
+  - url: https://github.com/g4rcez/testing-agent
+    selector: 'form[action="/g4rcez/testing-agent/unstar"] button[aria-label^="Unstar this repository"]'
     visible: true
     timeoutMs: 10000

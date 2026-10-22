@@ -79,23 +79,23 @@ try {
     join(directory, "package.json"),
     JSON.stringify({
       private: true,
-      dependencies: { "agent-tester": "./" + archive },
+      dependencies: { "testing-agent": "./" + archive },
     }),
   );
   await exec("bun", ["install", "--ignore-scripts"], {
     cwd: directory,
     maxBuffer: 2_000_000,
   });
-  const bin = join(directory, "node_modules", ".bin", "agent-tester");
+  const bin = join(directory, "node_modules", ".bin", "testing-agent");
   const installed = await Bun.file(
-    join(directory, "node_modules", "agent-tester", "package.json"),
+    join(directory, "node_modules", "testing-agent", "package.json"),
   ).json();
   if (
-    installed.name !== "agent-tester" ||
+    installed.name !== "testing-agent" ||
     installed.version !== (await Bun.file("package.json").json()).version
   )
     throw new Error("Installed package identity does not match the release");
-  for (const name of ["jev-test", "agent-browser-jev"]) {
+  for (const name of ["agent-tester", "jev-test", "agent-browser-jev"]) {
     const alias = await exec(
       join(directory, "node_modules", ".bin", name),
       ["--help"],
@@ -113,12 +113,13 @@ try {
   for (const path of [
     ...Object.values(installed.bin),
     "schema/test.schema.json",
+    "docs/REFERENCE.md",
     "dist/cli.js",
     "dist/plugin.js",
   ]) {
     if (
       !(await Bun.file(
-        join(directory, "node_modules", "agent-tester", String(path)),
+        join(directory, "node_modules", "testing-agent", String(path)),
       ).exists())
     )
       throw new Error("Declared package content is missing");

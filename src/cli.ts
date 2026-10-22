@@ -13,14 +13,14 @@ import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
 
-const help = `agent-tester - AI-driven browser tests through agent-browser
+const help = `testing-agent - AI-driven browser tests through agent-browser
 
 Usage:
-  agent-tester test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
+  testing-agent test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
   jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
   jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
-  agent-tester lsp <file.yaml|file.yml|file.json>
+  testing-agent lsp <file.yaml|file.yml|file.json>
   jev-test schema
   jev-test --help
 
@@ -132,7 +132,7 @@ export async function runCli(args: string[]): Promise<number> {
 
 if (
   import.meta.main ||
-  /(?:^|[\\/])(?:agent-tester|jev-test|agent-browser-jev)$/.test(
+  /(?:^|[\\/])(?:testing-agent|agent-tester|jev-test|agent-browser-jev)$/.test(
     process.argv[1] ?? "",
   )
 ) {

@@ -1,20 +1,21 @@
 {
-  "name": "agent-tester",
+  "name": "testing-agent",
   "version": "0.0.1",
   "description": "AI-driven browser tests with agent-browser and Jev or Laya decisions",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/g4rcez/agent-browser-jev.git"
+    "url": "git+https://github.com/g4rcez/testing-agent.git"
   },
-  "homepage": "https://github.com/g4rcez/agent-browser-jev#readme",
-  "bugs": "https://github.com/g4rcez/agent-browser-jev/issues",
+  "homepage": "https://github.com/g4rcez/testing-agent#readme",
+  "bugs": "https://github.com/g4rcez/testing-agent/issues",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "bin": {
+    "testing-agent": "./bin/testing-agent",
     "agent-tester": "./bin/agent-tester",
     "agent-browser-plugin-jev": "./bin/agent-browser-plugin-jev",
     "jev-test": "./bin/jev-test",
@@ -47,6 +48,7 @@
     "tools/laya-server.py",
     "README.md",
     "CONTRIBUTING.md",
+    "docs/REFERENCE.md",
     "docs/RELEASE.md",
     "docs/RELEASE-READINESS.md",
     "docs/evidence",

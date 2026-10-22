@@ -64,7 +64,7 @@ try {
   } else {
     await browser([
       "wait",
-      'a[href="/login?return_to=%2Fg4rcez%2Fagent-browser-jev"]',
+      'a[href="/login?return_to=%2Fg4rcez%2Ftesting-agent"]',
     ]);
   }
   if (record) {

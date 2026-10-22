@@ -1,51 +1,67 @@
-# Releasing agent-tester
+# Releasing testing-agent
 
 ## Policy
 
-- Pull requests targeting `main` run the complete checks on Linux and macOS. They cannot publish and receive no npm publishing credentials.
-- Pushes to `main` run the same matrix. The `release` job in `.github/workflows/ci.yml` runs only after both runners pass, and only in `g4rcez/agent-browser-jev`.
-- The first publication is `agent-tester@0.0.1`, regardless of earlier development versions.
-- Later releases inspect all commit messages since the last stable `vX.Y.Z` tag. `fix:` or `fix(scope):` increments patch; `feat:` increments minor; any Conventional Commit header with `!`, or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer, increments major. The highest increment wins.
-- Other commit types do not publish unless they declare a breaking change. Squash-merge PR titles must use Conventional Commits.
-- Releases are serialized. The source revision is the exact `main` revision whose checks passed, not a later branch head. Version changes affect the published manifest only; tags and npm versions are the release history, without release-bump commits or CI loops.
-- npm publication with provenance happens before GitHub Release creation. The GitHub release tags that source revision and includes the package archive and commit notes.
+- PRs targeting `main` run checks only. They receive no npm publishing credentials.
+- Pushes to `main` publish only after Linux and macOS verification succeeds, and only from `g4rcez/testing-agent`.
+- Keep the existing `vX.Y.Z` GitHub tag history. The package/repository rename does not reset versions or rewrite `v0.0.1`, which published `agent-tester`.
+- The rename is a patch: the next publication is `testing-agent@0.0.2` and GitHub `v0.0.2`.
+- Later releases inspect all commits since the latest stable tag: `fix` increments patch, `feat` increments minor, and `!` or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer increments major. The highest increment wins. Other commit types do not publish.
+- Version changes affect the release workspace only; there are no version-bump commits or CI loops. Tags and npm versions hold release history.
+- Releases are serialized. Keep the legacy concurrency group identifier so renamed workflows also serialize against earlier runs.
+- The release tags the exact source revision whose checks passed. npm publication with provenance and public-registry verification must succeed before GitHub Release creation.
+
+## Package-name transition
+
+The latest Git tag is still the version-planning baseline. The script reads that tag's `package.json` to identify which npm package it released.
+
+If its name is exactly `agent-tester`, omit that version only from the **new npm package's reconciliation baseline**. The old npm versions are not expected to exist under `testing-agent`. An unexpected historical package name fails closed. After the first `testing-agent` tag exists, normal same-package reconciliation resumes.
+
+HTTP 404 means the new npm package is absent. HTTP 200 with no stable versions, including a `0.0.0-stage` placeholder, is not absence: stop and resolve the pending publication before attempting another one. A stable npm publication awaiting GitHub completion can be repaired only from its original revision and identical archive.
 
 ## Publishing access
 
-Use a short-lived granular npm token only to bootstrap the first `0.0.1` publication. Store it privately with `gh secret set NPM_TOKEN --repo g4rcez/agent-browser-jev`; never put it in a file or chat. The token needs package publishing access and automated 2FA bypass. The workflow exposes it only to the gated release step as `BOOTSTRAP_NPM_TOKEN`. The release script strips both npm token variables from child processes by default, then supplies `NODE_AUTH_TOKEN` only to `npm publish` when the registry package does not exist, there is no previous release tag, and the target is exactly `0.0.1`. Later publications and repair-only retries never receive this token, even if the secret still exists.
+Use a short-lived granular npm token only for bootstrap. Set it privately:
 
-After bootstrap, use [npm trusted publishing](https://docs.npmjs.com/trusted-publishers). The release job uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`, which also permits provenance signing for the token-authenticated bootstrap. npm exchanges the workflow's OIDC identity for short-lived publishing access. npm requires Node 22.14.0+ and npm 11.5.1+. GitHub release access separately uses the job-scoped GitHub token with `contents: write`.
+```sh
+gh secret set NPM_TOKEN --repo g4rcez/testing-agent
+```
 
-In the npm package settings, add this GitHub Actions trusted publisher:
+The token needs package publishing access and automated 2FA bypass. Never put it in a file or chat. The workflow exposes it only as `BOOTSTRAP_NPM_TOKEN` in the gated release step. Every child process strips both npm token variables by default.
+
+Only `npm publish` can receive `NODE_AUTH_TOKEN`, and only when the registry returns 404 and either:
+
+- there is no previous tag and the target is the initial `0.0.1`; or
+- the previous tag is `v0.0.1`, its manifest names `agent-tester`, and the target is the authorized rename patch `0.0.2`.
+
+Later publications and repair-only retries do not receive the bootstrap token, even if the secret still exists.
+
+After bootstrap, configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) in the **testing-agent** package settings:
 
 | Field | Value |
 | --- | --- |
 | Organization or user | `g4rcez` |
-| Repository | `agent-browser-jev` |
-| Workflow filename | `ci.yml` (not `.github/workflows/ci.yml`) |
-| Environment name | Leave blank |
-| Allowed actions | Enable direct `npm publish` |
+| Repository | `testing-agent` |
+| Workflow filename | `ci.yml` |
+| Environment | Leave blank |
+| Allowed actions | Direct `npm publish` |
 
-The npm-side trust is an account setup step; the workflow cannot create that trust for itself. Configure it after the token-authenticated first release creates the package. Do not publish a placeholder or skip CI to reserve the name.
+CI uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`. npm requires Node 22.14.0+ and npm 11.5.1+. OIDC permission also supports provenance signing for token-authenticated bootstrap. GitHub Release access uses the separate job-scoped `GH_TOKEN` with `contents: write`.
 
-Complete a successful trusted publish within two days of creating the trust configuration. After bootstrap, delete the GitHub `NPM_TOKEN` secret and revoke the granular token on npm. Once trusted publishing works, npm recommends requiring 2FA and disallowing traditional token publishing. The workflow checks that GitHub OIDC is available before publication; successful authorization for later releases still depends on the npm-side configuration.
-
-Provenance is automatic for trusted publication from this public repository to a public package; the explicit `--provenance` flag keeps that requirement visible. Never create a successful GitHub release to conceal a failed npm publication.
+Delete the GitHub bootstrap secret and revoke the granular npm token after the transition. Configure npm-side trust before the next release; the workflow cannot create that trust itself. After verifying OIDC publication, restrict traditional token publishing.
 
 ## Checks and evidence
 
-Run `bun run check` and `bun audit` before pushing release changes. CI uses the frozen Bun lockfile and explicit browser setup. Verification runners install the system `ffmpeg` package through Ubuntu apt or macOS Homebrew, then check its availability before the full test suite. This adds no npm dependency and does not install anything on contributors' machines. Do not skip a failing platform, assertion, or package smoke test to make a release green.
+Run `bun run check` and `bun audit` before pushing. CI uses the frozen Bun lockfile and explicit browser setup. Verification runners install system ffmpeg through Ubuntu apt or macOS Homebrew, then check availability before the full suite. This adds no npm dependency and installs nothing on contributors' machines. The verification budget is 30 minutes to include native downloads. Do not skip a platform, assertion, or package smoke check.
 
-The package smoke test installs the packed artifact into an isolated temporary project, exercises all CLI aliases and the plugin, checks JSON/YAML schema references from the installed package, and runs a real Chromium test with default video recording. It uses a scripted protocol fixture; this proves package/controller integration, not model accuracy.
-
-Live model acceptance remains separate: run the documented Laya/Jev cases only with an explicitly available backend and record actual model identity, outcomes, and timings. Historical GIFs and receipts do not prove a new revision's accuracy. Keep the current limitations in `docs/RELEASE-READINESS.md` visible.
+The package smoke test installs the archive into an isolated project, exercises all CLI aliases and the plugin, checks editor schemas, and runs a real Chromium test with default recording. Its scripted protocol fixture proves integration, not live-model accuracy. Live-model receipts and recordings must identify the actual backend and outcomes.
 
 ## Retry and recovery
 
-Use GitHub's **rerun failed jobs** on the original workflow when publication or GitHub release creation fails. A manual `workflow_dispatch` on `main` also runs both verification jobs before attempting release. Do not manually increment the version to work around an authentication failure.
+After fixing authentication, rerun failed jobs on the **original workflow revision**. Do not bump the version to work around an authentication error. On `EOTP`, ask the maintainer to check token permissions or complete supported interactive authentication; do not disable account 2FA.
 
-Before a new publication, the script reconciles the highest stable npm version with the latest Git release tag. If npm publication succeeded but GitHub completion is pending, all other revisions are blocked until that original revision is repaired. This prevents an older workflow from moving npm `latest` backward or a newer workflow from skipping an incomplete release.
+Before planning a publication, reconcile stable npm versions with Git tags. If npm succeeded but GitHub completion is pending, block every other revision until the original revision is repaired. Require matching `gitHead` and SHA-512 integrity before repairing a release. Never overwrite or unpublish an npm version or move `latest` backward.
 
-If npm already contains the target version, the script requires both its `gitHead` and archive SHA-512 integrity to match the rebuilt package. Only then can it repair a missing GitHub release. A version collision or different artifact stops publication. Fix the cause and rerun the original revision; do not overwrite or unpublish a release. An old workflow cannot release behind a newer tag.
+A successful npm command alone is not proof that the intended version is publicly available. Registry propagation or staged approval can delay availability. Check the exact version's metadata, source revision, and archive integrity before GitHub creation. If the package is staged, use npm's **Staged Packages** tab or `npm stage list testing-agent` and review the result before requesting 2FA approval. An empty stage list is not evidence of failure: recheck the public registry. Do not restage while the original publication is pending.
 
-Rollback by pinning a known-good npm version, then ship a Conventional Commit fix through the same checks. Version 2 run-state files are not compatible with the 0.1.0 prototype; preserve private state and start new runs when changing incompatible versions.
+Rollback by pinning a known-good version, then ship a fix through the same checks. Version 2 run-state files are not compatible with the early 0.1.0 prototype; preserve private state and start new runs when changing incompatible versions.

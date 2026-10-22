@@ -1,8 +1,8 @@
 # Safe to run signed out. This checks the sign-in gate, not a successful star.
 name: GitHub Star requires sign-in
-url: https://github.com/g4rcez/agent-browser-jev
+url: https://github.com/g4rcez/testing-agent
 prompt: >-
-  Click the repository Star control on g4rcez/agent-browser-jev.
+  Click the repository Star control on g4rcez/testing-agent.
   This browser is signed out. Stop at the GitHub sign-in page.
   Do not enter credentials or claim that the repository was starred.
 backend:
@@ -15,6 +15,6 @@ steps:
       text: Sign in to GitHub
       timeoutMs: 10000
 expect:
-  - url: https://github.com/login?return_to=%2Fg4rcez%2Fagent-browser-jev
+  - url: https://github.com/login?return_to=%2Fg4rcez%2Ftesting-agent
     text: Sign in to GitHub
     timeoutMs: 10000

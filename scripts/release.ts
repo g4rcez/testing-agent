@@ -53,11 +53,54 @@ export function assertPublishedArtifact(
     );
 }
 
+export async function verifyNpmPublication(
+  version: string,
+  revision: string,
+  integrity: string,
+  request: (url: string) => Promise<Response> = (url) =>
+    fetch(url, { signal: AbortSignal.timeout(15000), cache: "no-store" }),
+): Promise<void> {
+  const response = await request(
+    `https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`,
+  );
+  if (!response.ok)
+    throw new Error(
+      `npm ${version} is not publicly available (${response.status}); check staged-publication approval before creating a GitHub release`,
+    );
+  const published = z
+    .object({
+      name: z.literal("testing-agent"),
+      version: z.literal(version),
+      gitHead: z.string(),
+      dist: z.object({ integrity: z.string() }),
+    })
+    .parse(await response.json());
+  assertPublishedArtifact(published, revision, integrity);
+}
+
+export function publicationBaseline(
+  previousTag: string | undefined,
+  previousPackage: string | undefined,
+): string | undefined {
+  if (!previousTag) return undefined;
+  if (previousPackage === "agent-tester") return undefined;
+  if (previousPackage !== "testing-agent")
+    throw new Error("Unexpected package in release history");
+  return previousTag.slice(1);
+}
+
 export function pendingRelease(
   previous: string | undefined,
-  versions: Record<string, PublishedArtifact>,
+  versions: Record<string, PublishedArtifact> | undefined,
   revision: string,
 ): string | undefined {
+  if (versions === undefined) {
+    if (previous !== undefined)
+      throw new Error(
+        "The GitHub release baseline is missing from npm; reconcile the release history before publishing",
+      );
+    return undefined;
+  }
   const latest = Object.keys(versions)
     .filter((version) => stableVersion.test(version))
     .sort((left, right) => {
@@ -69,8 +112,12 @@ export function pendingRelease(
       }
       return 0;
     })[0];
+  if (!latest)
+    throw new Error(
+      "npm has no stable version; resolve any staged publication and rerun its original revision before publishing another release",
+    );
   if (latest === previous) return undefined;
-  if (!latest || (previous !== undefined && !Object.hasOwn(versions, previous)))
+  if (previous !== undefined && !Object.hasOwn(versions, previous))
     throw new Error(
       "The GitHub release baseline is missing from npm; reconcile the release history before publishing",
     );
@@ -99,14 +146,18 @@ export function npmPublishEnvironment(
     version: string;
     previousTag: string | undefined;
     registryExists: boolean;
+    previousPackage?: string | undefined;
   },
 ): Record<string, string | undefined> {
   const clean = { ...environment };
   delete clean.BOOTSTRAP_NPM_TOKEN;
   delete clean.NODE_AUTH_TOKEN;
   if (
-    release?.version === "0.0.1" &&
-    !release.previousTag &&
+    release &&
+    ((release.version === "0.0.1" && !release.previousTag) ||
+      (release.previousPackage === "agent-tester" &&
+        release.previousTag === "v0.0.1" &&
+        release.version === "0.0.2")) &&
     !release.registryExists &&
     environment.BOOTSTRAP_NPM_TOKEN
   )
@@ -130,7 +181,7 @@ async function command(
 }
 
 async function release(): Promise<void> {
-  const repository = "g4rcez/agent-browser-jev";
+  const repository = "g4rcez/testing-agent";
   if (
     process.env.GITHUB_ACTIONS !== "true" ||
     process.env.GITHUB_REPOSITORY !== repository ||
@@ -165,15 +216,28 @@ async function release(): Promise<void> {
     sameRevision =
       (await command("git", ["rev-list", "-n", "1", previousTag])) === revision;
   }
+  const previousPackage = previousTag
+    ? z
+        .object({ name: z.string() })
+        .parse(
+          JSON.parse(
+            await command("git", ["show", `${previousTag}:package.json`]),
+          ),
+        ).name
+    : undefined;
+  const baseline = publicationBaseline(previousTag, previousPackage);
   const range = previousTag ? `${previousTag}..${revision}` : revision;
   const messages = (await command("git", ["log", range, "--format=%B%x00"]))
     .split("\0")
     .map((message) => message.trim())
     .filter(Boolean);
-  const response = await fetch("https://registry.npmjs.org/agent-tester", {
-    signal: AbortSignal.timeout(15000),
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `https://registry.npmjs.org/testing-agent?verify=${Date.now()}`,
+    {
+      signal: AbortSignal.timeout(15000),
+      cache: "no-store",
+    },
+  );
   if (!response.ok && response.status !== 404)
     throw new Error(`npm registry lookup failed (${response.status})`);
   const registry =
@@ -181,7 +245,7 @@ async function release(): Promise<void> {
       ? undefined
       : z
           .object({
-            name: z.literal("agent-tester"),
+            name: z.literal("testing-agent"),
             versions: z.record(
               z.string(),
               z.object({
@@ -191,11 +255,7 @@ async function release(): Promise<void> {
             ),
           })
           .parse(await response.json());
-  const pending = pendingRelease(
-    previousTag?.slice(1),
-    registry?.versions ?? {},
-    revision,
-  );
+  const pending = pendingRelease(baseline, registry?.versions, revision);
   const version =
     pending ??
     (sameRevision
@@ -213,7 +273,7 @@ async function release(): Promise<void> {
   }
   const tag = `v${version}`;
   const manifest = await Bun.file("package.json").json();
-  if (manifest.name !== "agent-tester")
+  if (manifest.name !== "testing-agent")
     throw new Error("Unexpected package name");
   await writeFile(
     "package.json",
@@ -227,7 +287,7 @@ async function release(): Promise<void> {
       JSON.parse(await command("npm", ["pack", "--ignore-scripts", "--json"])),
     );
   const archive = packed[0]!.filename;
-  if (archive !== `agent-tester-${version}.tgz`)
+  if (archive !== `testing-agent-${version}.tgz`)
     throw new Error("Unexpected package archive");
   const integrity =
     "sha512-" +
@@ -251,8 +311,11 @@ async function release(): Promise<void> {
         version,
         previousTag,
         registryExists: registry !== undefined,
+        previousPackage,
       }),
     );
+
+  await verifyNpmPublication(version, revision, integrity);
 
   // A failed GitHub release after a successful npm publish is repairable by
   // rerunning this exact workflow, but only for the identical package bytes.
@@ -267,7 +330,7 @@ async function release(): Promise<void> {
     },
   );
   if (github.status === 404) {
-    const directory = await mkdtemp(join(tmpdir(), "agent-tester-release-"));
+    const directory = await mkdtemp(join(tmpdir(), "testing-agent-release-"));
     try {
       const notes = join(directory, "notes.md");
       const commits = await command("git", [
@@ -277,7 +340,7 @@ async function release(): Promise<void> {
       ]);
       await writeFile(
         notes,
-        `npm: https://www.npmjs.com/package/agent-tester/v/${version}\n\nRevision: ${revision}\n\n${commits}\n`,
+        `npm: https://www.npmjs.com/package/testing-agent/v/${version}\n\nRevision: ${revision}\n\n${commits}\n`,
       );
       await command("gh", [
         "release",
@@ -289,7 +352,7 @@ async function release(): Promise<void> {
         "--target",
         revision,
         "--title",
-        `agent-tester ${version}`,
+        `testing-agent ${version}`,
         "--notes-file",
         notes,
       ]);
@@ -301,7 +364,7 @@ async function release(): Promise<void> {
   console.log(
     JSON.stringify({
       released: true,
-      package: `agent-tester@${version}`,
+      package: `testing-agent@${version}`,
       tag,
       revision,
       integrity,

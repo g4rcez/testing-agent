@@ -24,4 +24,4 @@ The results below predate the `agent-tester` package rename and new CLI/schema/r
 - Live-model receipts identify model revision, app fixture, successful/failed outcomes, and measured timing boundaries.
 - Unit/browser/package checks and applicable dependency checks pass. Unsupported or unavailable external evidence remains explicitly recorded.
 
-The repository is `g4rcez/agent-browser-jev`, and the npm target is `agent-tester`, beginning at `0.0.1`. Publication is approved only after the checks in the [release policy](RELEASE.md) pass; authenticated registry access is still required.
+The repository and npm target are now `g4rcez/testing-agent` and `testing-agent`. The existing release history continues from `agent-tester@0.0.1`; the rename patch is `testing-agent@0.0.2`. Publication is approved only after the checks in the [release policy](RELEASE.md) pass; authenticated registry access is still required.

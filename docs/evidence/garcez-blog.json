@@ -1,0 +1,107 @@
+{
+  "runId": "4848ac7f-bac5-4b1c-8939-18c6a39f4f07",
+  "name": "Explore garcez.dev",
+  "status": "blocked",
+  "passed": false,
+  "steps": [
+    {
+      "step": 1,
+      "instruction": "Type ls into the Interactive garcez.dev terminal",
+      "status": "failed",
+      "success": false,
+      "reason": "Three actions produced no observable frontend change"
+    },
+    {
+      "step": 2,
+      "instruction": "Press Enter in the Interactive garcez.dev terminal to execute ls",
+      "status": "skipped",
+      "success": false
+    },
+    {
+      "step": 3,
+      "instruction": "Open About from the main navigation",
+      "status": "skipped",
+      "success": false
+    }
+  ],
+  "actions": [
+    {
+      "stepIndex": 0,
+      "operation": "PRESS_ENTER",
+      "target": "Interactive garcez.dev terminal",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.0644,
+      "elapsedMs": 3959,
+      "inferenceMs": 419,
+      "executeMs": 33
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "Search the site ⌘K",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.1114,
+      "elapsedMs": 4515,
+      "inferenceMs": 416,
+      "executeMs": 43
+    },
+    {
+      "stepIndex": 0,
+      "operation": "TYPE_TEXT",
+      "target": "Find something...",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.0653,
+      "elapsedMs": 4784,
+      "inferenceMs": 142,
+      "executeMs": 33
+    },
+    {
+      "stepIndex": 0,
+      "operation": "PRESS_ENTER",
+      "target": "Find something...",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.0774,
+      "elapsedMs": 5140,
+      "inferenceMs": 166,
+      "executeMs": 33
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "combobox",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.0769,
+      "elapsedMs": 5419,
+      "inferenceMs": 154,
+      "executeMs": 31
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "combobox",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.7235,
+      "elapsedMs": 5692,
+      "inferenceMs": 155,
+      "executeMs": 33
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "combobox",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.7423,
+      "elapsedMs": 5992,
+      "inferenceMs": 168,
+      "executeMs": 37
+    }
+  ],
+  "assertions": [],
+  "reason": "Three actions produced no observable frontend change",
+  "elapsedMs": 6094,
+  "video": {
+    "status": "saved",
+    "path": "../assets/garcez-blog.webm"
+  },
+  "evidence": "Real local Laya execution of examples/garcez-blog.yaml through the source CLI. This is a blocked attempt, not a passing demo or installed-package verification."
+}

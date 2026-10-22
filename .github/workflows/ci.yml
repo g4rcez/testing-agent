@@ -48,7 +48,7 @@ jobs:
     needs: verify
     if: >-
       needs.verify.result == 'success' &&
-      github.repository == 'g4rcez/agent-browser-jev' &&
+      github.repository == 'g4rcez/testing-agent' &&
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest

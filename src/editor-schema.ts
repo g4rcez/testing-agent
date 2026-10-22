@@ -15,7 +15,7 @@ export function testJsonSchema() {
   const schema = z.toJSONSchema(runSchema, { io: "input" });
   return {
     ...schema,
-    title: "agent-tester test",
+    title: "testing-agent test",
     description:
       "Ordered browser test instructions, browser configuration, and expected results. Final assertions are required; model DONE alone cannot pass a test.",
     properties: {

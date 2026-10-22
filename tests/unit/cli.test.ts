@@ -44,7 +44,12 @@ async function validate(name: string, content: string, flags: string[] = []) {
 describe("CLI test definitions", () => {
   test("publishes the primary CLI without removing legacy entry points", async () => {
     const metadata = await Bun.file("package.json").json();
-    expect(metadata.name).toBe("agent-tester");
+    expect(metadata.name).toBe("testing-agent");
+    expect(metadata.files).toContain("docs/REFERENCE.md");
+    expect(metadata.repository.url).toBe(
+      "git+https://github.com/g4rcez/testing-agent.git",
+    );
+    expect(metadata.bin["testing-agent"]).toBe("./bin/testing-agent");
     expect(metadata.bin["agent-tester"]).toBe("./bin/agent-tester");
     expect(metadata.bin["agent-browser-plugin-jev"]).toBe(
       "./bin/agent-browser-plugin-jev",
@@ -56,6 +61,26 @@ describe("CLI test definitions", () => {
     expect(await Bun.file(metadata.bin["agent-browser-jev"]).text()).toContain(
       "../dist/cli.js",
     );
+  });
+
+  test("README first test matches the three checked blog steps", async () => {
+    const readme = await Bun.file("README.md").text();
+    const firstTest = readme
+      .split("## First test\n")[1]
+      ?.split("## Editor autocomplete")[0];
+    const snippet = firstTest?.match(/```yaml\n([\s\S]*?)```/)?.[1];
+    expect(snippet).toBeDefined();
+    const example = Bun.YAML.parse(
+      await Bun.file("examples/garcez-blog.yaml").text(),
+    );
+    expect(Bun.YAML.parse(snippet!)).toEqual(example);
+    const input = runSchema.parse(example);
+    expect(input.steps).toHaveLength(3);
+    expect(
+      input.steps.every((step) => step.expect?.url && step.expect?.text),
+    ).toBe(true);
+    expect(JSON.stringify(input)).not.toContain('"selector"');
+    expect(firstTest).toContain("testing-agent test blog.test.yaml");
   });
 
   test("ships equivalent JSON/YAML examples and valid GitHub definitions", async () => {

@@ -6,6 +6,8 @@ import {
   pendingRelease,
   assertOidcEnvironment,
   npmPublishEnvironment,
+  verifyNpmPublication,
+  publicationBaseline,
 } from "../../scripts/release.ts";
 
 test("trusted publishing requires GitHub OIDC, not an npm token", () => {
@@ -55,6 +57,56 @@ test("the npm bootstrap secret reaches only the initial unpublished 0.0.1 publis
   ).toEqual({ PATH: "/tools" });
 });
 
+test("a package rename keeps Git version history but starts a new npm reconciliation baseline", () => {
+  expect(publicationBaseline("v0.0.1", "agent-tester")).toBeUndefined();
+  expect(publicationBaseline("v0.0.2", "testing-agent")).toBe("0.0.2");
+  expect(() => publicationBaseline("v0.0.1", "unexpected-package")).toThrow();
+  const baseline = publicationBaseline("v0.0.1", "agent-tester");
+  expect(
+    pendingRelease(baseline, undefined, "rename-revision"),
+  ).toBeUndefined();
+  expect(nextVersion("0.0.1", ["fix: Rename the package"])).toBe("0.0.2");
+  expect(
+    pendingRelease(
+      baseline,
+      { "0.0.2": { gitHead: "rename-revision" } },
+      "rename-revision",
+    ),
+  ).toBe("0.0.2");
+  expect(() =>
+    pendingRelease(
+      baseline,
+      { "0.0.2": { gitHead: "rename-revision" } },
+      "other-revision",
+    ),
+  ).toThrow("awaiting GitHub");
+  const environment = { BOOTSTRAP_NPM_TOKEN: "fixture" };
+  expect(
+    npmPublishEnvironment(environment, {
+      version: "0.0.2",
+      previousTag: "v0.0.1",
+      previousPackage: "agent-tester",
+      registryExists: false,
+    }).NODE_AUTH_TOKEN,
+  ).toBe("fixture");
+  expect(
+    npmPublishEnvironment(environment, {
+      version: "0.0.2",
+      previousTag: "v0.0.1",
+      previousPackage: "agent-tester",
+      registryExists: true,
+    }).NODE_AUTH_TOKEN,
+  ).toBeUndefined();
+  expect(
+    npmPublishEnvironment(environment, {
+      version: "0.0.2",
+      previousTag: "v0.0.1",
+      previousPackage: "testing-agent",
+      registryExists: false,
+    }).NODE_AUTH_TOKEN,
+  ).toBeUndefined();
+});
+
 test("first release is always 0.0.1", () => {
   expect(nextVersion(undefined, ["feat!: Initial implementation"])).toBe(
     "0.0.1",
@@ -77,6 +129,31 @@ test("Conventional Commits choose the highest explicit release increment", () =>
   expect(nextVersion("0.0.1", ["feat: Add a command"])).toBe("0.1.0");
   expect(nextVersion("0.0.1", ["feat!: Break the contract"])).toBe("1.0.0");
   expect(() => nextVersion("invalid", ["fix: Correct a defect"])).toThrow();
+});
+
+test("npm command success is not proof of a public, matching publication", async () => {
+  const artifact = {
+    name: "testing-agent",
+    version: "0.0.1",
+    gitHead: "revision",
+    dist: { integrity: "sha512-expected" },
+  };
+  const verify = (body: unknown, status = 200) =>
+    verifyNpmPublication("0.0.1", "revision", "sha512-expected", async () =>
+      Response.json(body, { status }),
+    );
+  await expect(verify(artifact)).resolves.toBeUndefined();
+  await expect(verify("version not found", 404)).rejects.toThrow("staged");
+  await expect(verify({}, 503)).rejects.toThrow("not publicly available");
+  await expect(
+    verify({ ...artifact, version: "0.0.0-stage" }),
+  ).rejects.toThrow();
+  await expect(verify({ ...artifact, gitHead: "different" })).rejects.toThrow(
+    "different revision or artifact",
+  );
+  await expect(
+    verify({ ...artifact, dist: { integrity: "sha512-different" } }),
+  ).rejects.toThrow("different revision or artifact");
 });
 
 test("release retries require the exact published revision and artifact", () => {
@@ -126,7 +203,15 @@ test("an npm publication without its GitHub release blocks both older and newer 
   expect(
     pendingRelease("0.0.2", fixPublishedFirst, "newer-feature-revision"),
   ).toBeUndefined();
-  expect(pendingRelease(undefined, {}, "first-revision")).toBeUndefined();
+  expect(
+    pendingRelease(undefined, undefined, "first-revision"),
+  ).toBeUndefined();
+  expect(() =>
+    pendingRelease(undefined, { "0.0.0-stage": {} }, "other-revision"),
+  ).toThrow("staged");
+  expect(() => pendingRelease(undefined, {}, "other-revision")).toThrow(
+    "staged",
+  );
   expect(() => pendingRelease(undefined, initial, "other-revision")).toThrow();
   expect(() => pendingRelease("0.1.0", initial, "initial")).toThrow("baseline");
   const numericallySorted = {
@@ -212,6 +297,7 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   const release = workflow.jobs.release;
   expect(release.needs).toBe("verify");
   expect(release.if).toContain("github.ref == 'refs/heads/main'");
+  expect(release.if).toContain("github.repository == 'g4rcez/testing-agent'");
   expect(release.if).toContain("github.event_name == 'push'");
   expect(release.if).toContain("needs.verify.result == 'success'");
   expect(release.permissions.contents).toBe("write");

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agent-tester",
+      "name": "testing-agent",
       "dependencies": {
         "zod": "4.6.7",
       },
