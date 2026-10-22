@@ -8,7 +8,7 @@ Start with the [three-step first test](../README.md#first-test).
 bun install
 bun run build
 bunx --no-install agent-browser install
-uv run tools/laya-server.py
+./bin/testing-agent setup laya
 ```
 
 In another terminal:
@@ -17,7 +17,7 @@ In another terminal:
 ./bin/testing-agent test examples/garcez-blog.yaml
 ```
 
-Bun 1.3.14+, Chrome, agent-browser, and ffmpeg are required. The optional local Laya service needs Python 3.11+ and uv. Install missing tools manually. The package includes the service script, not its Python dependencies or model weights.
+Bun 1.3.14+, Node.js 20+, Chrome, agent-browser, and ffmpeg are required. Install missing tools manually. The optional Node Laya backend needs no Python. Its model weights are downloaded only by explicit setup, not by a test command. Use `ONNXRUNTIME_NODE_INSTALL=skip` with npm installation to skip unused CUDA downloads; the backend uses CPU inference.
 
 ## Test definitions
 
@@ -92,7 +92,21 @@ agent-browser --session YOUR_SESSION close
 
 Both use POST `/v1/systemone`. Override `backend.baseUrl`, `backend.model`, or `backend.apiKeyEnv` in the definition. There is no automatic provider switch. Jev defaults to `jev-latest`; pin a model for reproducibility.
 
-The local service pins `cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206`, binds to loopback, and uses the installed Python runtime. Successful source runs are not installed-package verification. Scripted fixtures prove protocol integration, not model accuracy.
+### Optional local setup
+
+Run `testing-agent setup laya` in a separate terminal. It uses optional `@receptron/laya@0.2.0` and pins `receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b`. First setup downloads about 1.7 GB; allow at least 2 GB RAM. The cache is under `~/.cache/receptron-laya` by default (`LAYA_CACHE` can override it). Keep the process running after `"ready": true`; Ctrl+C stops its HTTP service and releases the model. No inference runs during setup.
+
+The service binds only to `127.0.0.1:8791`. `LAYA_PORT` changes its port; configure the same port in `LAYA_BASE_URL` or `backend.baseUrl` for tests. Optional `LAYA_API_KEY` protects inference requests. Browser-origin and invalid-host requests are rejected. Requests are limited to 1 MB, at most eight choice questions with 200 choices each, and one active request; there is no inference queue.
+
+The adapter preserves every offered choice and maps the model's probabilities back to the original IDs without adding confidence. It preserves the current instruction, full task, decision rules, field values, and recent actions within the pinned model's token budget. Only page text can be shortened, with a truncation marker. Required context that cannot fit is rejected, not silently discarded. Finite model context and model accuracy remain limits; a reachable service does not guarantee a passing test.
+
+The optional runtime can be omitted for Jev-only installations with `npm install --omit=optional`. Ordinary commands load no model and do not fetch weights. If the optional dependency is missing, `setup laya` asks for installation rather than installing it itself.
+
+The existing Python alternative remains available with `uv run "$(npm root -g)/testing-agent/tools/laya-server.py"` (Python 3.11+ and uv required). It pins `cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206`; its model and adapter differ from the Node backend.
+
+Before `test`/`run`, the CLI checks backend configuration and performs a bounded, non-generating GET to `/v1/systemone`. It refuses redirects and hides transport details. A POST-only endpoint may return 400, 404, 405, or 501; those establish reachability, not model readiness or valid inference credentials. Configuration, connection, and other HTTP failures return JSON setup guidance on stderr with exit code 1 before browser or run-state creation. `validate`, status, and recovery remain usable without an online model.
+
+Successful source runs are not installed-package verification. Scripted fixtures prove protocol integration, not model accuracy.
 
 ## Values and secrets
 
@@ -133,6 +147,8 @@ Supply `session` in the payload to reuse a manually prepared browser. Plugin cal
 Defaults: `maxActions: 60`, `maxStepDecisions: 20`, `actionsPerCall: 20`, per-call `timeoutMs: 45000`, and `totalTimeoutMs: 120000`. Maximum total time is 30 minutes. Time includes startup, recording, inference, input, and assertions. Optional `minConfidence` is provider-specific, not proof of correctness.
 
 ## Existing recordings and development checks
+
+The [About receipt](evidence/garcez-about.json) and [video](assets/garcez-about.webm) show a real **passing** source CLI run with the optional Node Laya backend. It took three model-selected clicks, including opening and closing the terminal, before About. Both URL and page-text assertions passed. It does not prove the terminal workflow below passes.
 
 The [three-step blog receipt](evidence/garcez-blog.json) and [video](assets/garcez-blog.webm) show a real **blocked** local Laya attempt against the current definition. Its assertions were not weakened to produce a pass.
 
