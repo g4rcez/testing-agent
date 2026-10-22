@@ -32,7 +32,7 @@ Provenance is automatic for trusted publication from this public repository to a
 
 ## Checks and evidence
 
-Run `bun run check` and `bun audit` before pushing release changes. CI uses the frozen Bun lockfile, explicit browser setup, and an ffmpeg availability check. Do not skip a failing platform, assertion, or package smoke test to make a release green.
+Run `bun run check` and `bun audit` before pushing release changes. CI uses the frozen Bun lockfile and explicit browser setup. Verification runners install the system `ffmpeg` package through Ubuntu apt or macOS Homebrew, then check its availability before the full test suite. This adds no npm dependency and does not install anything on contributors' machines. Do not skip a failing platform, assertion, or package smoke test to make a release green.
 
 The package smoke test installs the packed artifact into an isolated temporary project, exercises all CLI aliases and the plugin, checks JSON/YAML schema references from the installed package, and runs a real Chromium test with default video recording. It uses a scripted protocol fixture; this proves package/controller integration, not model accuracy.
 

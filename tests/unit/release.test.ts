@@ -103,6 +103,46 @@ test("an npm publication without its GitHub release blocks both older and newer 
   expect(pendingRelease("0.0.9", numericallySorted, "new")).toBe("0.0.10");
 });
 
+test("CI provisions native recording dependencies on both platforms before verification", async () => {
+  const workflow = z
+    .object({
+      jobs: z.object({
+        verify: z.object({
+          steps: z.array(
+            z.object({
+              name: z.string().optional(),
+              run: z.string().optional(),
+              if: z.string().optional(),
+            }),
+          ),
+        }),
+      }),
+    })
+    .parse(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text()));
+  const steps = workflow.jobs.verify.steps;
+  const linux = steps.findIndex(
+    (step) => step.name === "Install ffmpeg on Linux",
+  );
+  const macos = steps.findIndex(
+    (step) => step.name === "Install ffmpeg on macOS",
+  );
+  const verify = steps.findIndex(
+    (step) => step.name === "Verify video recording tools",
+  );
+  const checks = steps.findIndex((step) => step.run === "bun run check");
+  expect(linux).toBeGreaterThanOrEqual(0);
+  expect(macos).toBeGreaterThanOrEqual(0);
+  expect(steps[linux]?.if).toBe("runner.os == 'Linux'");
+  expect(steps[macos]?.if).toBe("runner.os == 'macOS'");
+  expect(steps[linux]?.run).toContain(
+    "apt-get install --yes --no-install-recommends ffmpeg",
+  );
+  expect(steps[macos]?.run).toContain("brew install ffmpeg");
+  expect(verify).toBeGreaterThan(linux);
+  expect(verify).toBeGreaterThan(macos);
+  expect(checks).toBeGreaterThan(verify);
+});
+
 test("publishing is gated by both CI runners and restricted to main, never PRs", async () => {
   const workflow = z
     .object({
