@@ -14,6 +14,7 @@ import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
 import { BackendSetupError, ensureBackend } from "./backend.ts";
 import { serveLocalLaya } from "./local-laya.ts";
+import { detectEnv, formatManual, planSetup, runSetup } from "./setup.ts";
 
 const help = `testing-agent - AI-driven browser tests through agent-browser
 
@@ -22,6 +23,7 @@ Usage:
   jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
   jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
+  testing-agent setup [--manual]
   testing-agent setup laya
   testing-agent lsp <file.yaml|file.yml|file.json>
   jev-test schema
@@ -61,10 +63,19 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   if (command === "setup") {
-    if (positional !== "laya" || rest.length)
-      throw new Error("Use: testing-agent setup laya");
-    await serveLocalLaya();
-    return 0;
+    if (positional === "laya" && !rest.length) {
+      await serveLocalLaya();
+      return 0;
+    }
+    const manual = positional === "--manual";
+    if ((positional && !manual) || rest.length)
+      throw new Error("Use: testing-agent setup [--manual] or setup laya");
+    const env = detectEnv();
+    if (manual) {
+      console.log(formatManual(planSetup(env), env));
+      return 0;
+    }
+    return (await runSetup(env)).failed ? 1 : 0;
   }
   if (!positional)
     throw new Error("A test file or run ID is required; use --help");

@@ -4,12 +4,14 @@ Write browser tests in plain-language **YAML or JSON**. agent-browser controls C
 
 ## Install
 
-Requires **Bun 1.3.14+**, **Node.js 20+**, and **ffmpeg** on your PATH. Install missing tools before continuing.
+Requires **Bun 1.3.14+**, **Node.js 20+**, and **ffmpeg** on your PATH.
 
 ```sh
 ONNXRUNTIME_NODE_INSTALL=skip npm install -g testing-agent agent-browser
-agent-browser install
+testing-agent setup
 ```
+
+`testing-agent setup` installs whatever is missing (Bun, Node.js, ffmpeg, agent-browser and its Chrome) with Homebrew on macOS, apt/dnf/pacman/apk/zypper on Linux, or winget on Windows, and skips what is already present. To only see the commands for your platform without running them, use `testing-agent setup --manual`.
 
 Start the optional local Laya backend in a separate terminal. No Python or API key is needed:
 
