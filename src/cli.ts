@@ -11,17 +11,22 @@ import {
 } from "./runner.ts";
 import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
+import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
 
-const help = `jev-test - AI-driven browser tests through agent-browser
+const help = `agent-tester - AI-driven browser tests through agent-browser
 
 Usage:
+  agent-tester test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
   jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
   jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
+  agent-tester lsp <file.yaml|file.yml|file.json>
   jev-test schema
   jev-test --help
 
-Tests require explicit final expect assertions. Run and resume automatically
+Test/run records video by default (requires ffmpeg). Browser settings belong in
+browser.args (option names without --) and browser.env in the test file.
+Tests require explicit final expect assertions. Test/run and resume automatically
 continue paused calls within the total test deadline. JSON and JUnit reports
 are written for terminal results. Exit codes: 0 passed, 1 failed/blocked/uncertain,
 2 invalid input, 130 cancelled. Credentials come from environment variables.
@@ -49,13 +54,17 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   if (command === "schema") {
-    console.log(
-      JSON.stringify(z.toJSONSchema(runSchema, { io: "input" }), null, 2),
-    );
+    console.log(JSON.stringify(testJsonSchema(), null, 2));
     return 0;
   }
   if (!positional)
     throw new Error("A test file or run ID is required; use --help");
+  if (command === "lsp") {
+    if (rest.length)
+      throw new Error("The lsp command takes one file and no options");
+    console.log(JSON.stringify(await insertEditorSchema(positional)));
+    return 0;
+  }
   const flags: Record<string, string> = {};
   for (let index = 0; index < rest.length; index += 2) {
     const flag = rest[index],
@@ -81,7 +90,7 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   let state;
-  if (command === "run" || command === "validate") {
+  if (command === "test" || command === "run" || command === "validate") {
     const raw = await readTest(positional);
     if (flags["--backend"])
       raw.backend = {
@@ -90,6 +99,7 @@ export async function runCli(args: string[]): Promise<number> {
       };
     if (flags["--url"]) raw.url = flags["--url"];
     if (flags["--session"]) raw.session = flags["--session"];
+    if (command !== "validate") raw.recordVideo = true;
     const input = runSchema.parse(raw);
     if (command === "validate") {
       console.log(
@@ -120,7 +130,12 @@ export async function runCli(args: string[]): Promise<number> {
       : 1;
 }
 
-if (import.meta.main || process.argv[1]?.endsWith("jev-test")) {
+if (
+  import.meta.main ||
+  /(?:^|[\\/])(?:agent-tester|jev-test|agent-browser-jev)$/.test(
+    process.argv[1] ?? "",
+  )
+) {
   try {
     process.exitCode = await runCli(process.argv.slice(2));
   } catch (error) {

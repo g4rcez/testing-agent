@@ -9,10 +9,10 @@ beforeEach(async () => {
     Date.now() + 20_000,
   );
   await browser.command(["open", new URL("./app.html", import.meta.url).href]);
-});
+}, 15_000);
 afterEach(async () => {
-  await browser.command(["close"]);
-});
+  await new Browser(browser.session, Date.now() + 12_000).command(["close"]);
+}, 15_000);
 
 function choice(
   observed: Observation,

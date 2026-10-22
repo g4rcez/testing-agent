@@ -1,21 +1,71 @@
-# agent-browser Jev/Laya tests
+# agent-tester
 
 Create browser tests in **YAML or JSON** from a prompt and ordered instructions. **agent-browser controls the browser; Jev or Laya chooses the next action.** User-authored assertions determine whether a test passes.
 
-This is the 0.2.0 release candidate. Supported execution targets are ordinary HTML/ARIA controls and open shadow roots on Chromium. Release evidence and remaining external gates are recorded in [release readiness](docs/RELEASE-READINESS.md).
+The first npm release is `agent-tester@0.0.1`. Supported execution targets are ordinary HTML/ARIA controls and open shadow roots on Chromium. Release evidence and remaining external gates are recorded in [release readiness](docs/RELEASE-READINESS.md).
 
-## Install from source
+## Install
 
-Requires Bun 1.3.14+, agent-browser, and Chrome. The browser controller is a peer dependency.
+Requires Bun 1.3.14+, agent-browser, Chrome, and `ffmpeg` on PATH for the default video recording. The browser controller is a peer dependency. Install missing tools manually before running tests.
+
+```sh
+npm install -g agent-tester
+agent-tester --help
+```
+
+From source:
 
 ```sh
 bun install
 bun run build
 bunx agent-browser install
-./bin/jev-test --help
+./bin/agent-browser-jev --help
 ```
 
-The packaged entry points are `jev-test` and `agent-browser-plugin-jev`. Package smoke tests install the tarball into a separate project and exercise both entry points through a real browser. This repository is prepared for publication; registry and repository ownership must be configured before publishing.
+The primary command is `agent-tester test file.yaml`. The package keeps `agent-browser-jev`, `jev-test`, and the `agent-browser-plugin-jev` plugin for compatibility. PRs run checks only; green pushes to `main` publish npm and GitHub releases according to [the release policy](docs/RELEASE.md).
+
+## Workflow
+
+1. Write the steps and expected results in a YAML file. No CSS selectors are needed for text and URL checks.
+2. Run the file:
+
+```sh
+agent-tester test examples/github-repository-tour.yaml
+```
+
+From this source checkout, use `./bin/agent-browser-jev test examples/github-repository-tour.yaml` after building. Start your configured Jev or Laya backend before running a test. Every CLI test records a `.webm` video without a recording flag and prints one JSON result to stdout with all steps, their success status, and the final `passed` boolean. See [browser configuration](#browser-configuration) for YAML options.
+
+## Editor autocomplete
+
+Add the bundled JSON Schema reference to a test file:
+
+```sh
+agent-tester lsp file.yaml
+agent-tester lsp file.json
+```
+
+For YAML (`.yaml` or `.yml`), the command puts this editor directive on the first line:
+
+```yaml
+# yaml-language-server: $schema=./node_modules/agent-tester/schema/test.schema.json
+```
+
+For JSON, it puts `$schema` first:
+
+```json
+{
+  "$schema": "./node_modules/agent-tester/schema/test.schema.json",
+  "name": "My browser test"
+}
+```
+
+The actual reference is calculated relative to your file and the installed package; no network request is needed. Editors with JSON Schema support, or YAML language-server support, can then suggest test fields and show structural validation errors. This command adds a schema reference; it does not start an LSP server or install editor extensions.
+
+The command preserves the rest of the file's formatting: indentation, line endings, comments in YAML, JSON value spellings, BOM, and the final newline. Existing JSON schema properties and YAML schema directives in the leading comment header are updated and moved to the required position. The YAML document body is not changed, even if unfinished scalar text contains a directive-like line. Repeated runs do not duplicate the inserted reference. JSON must be a valid object; YAML can be an incomplete file while you write it. Run `lsp` again if you move the file or change the package installation path.
+
+`schema/test.schema.json` is generated from the same Zod input contract as the CLI `schema` command. Builds regenerate it; maintainers can also run `bun run schema:generate`. Do not edit the generated file directly. Editor validation does not replace `validate` or runtime assertions: cross-field rules implemented as Zod refinements still run in the CLI.
+
+From a source checkout, build before using `./bin/agent-browser-jev lsp file.yaml`, or use `bun src/cli.ts lsp file.yaml` directly.
 
 ## Try `ls` in a visible browser
 
@@ -81,7 +131,7 @@ bun run demo:github
 bun run demo:github -- --record
 ```
 
-This recording uses [`examples/github-star-sign-in.yaml`](examples/github-star-sign-in.yaml). It checks both the exact sign-in URL and the visible username field. **It does not add a star or treat the sign-in page as a successful star.** No credentials are entered or recorded. Real-run receipts are in [GitHub evidence](docs/evidence/github-star-sign-in.json) and [terminal evidence](docs/evidence/garcez-ls.json).
+This recording uses [`examples/github-star-sign-in.yaml`](examples/github-star-sign-in.yaml). It checks both the exact sign-in URL and the visible “Sign in to GitHub” text. The GIF and receipt describe the earlier recorded run, not a new verification of the current definition. **It does not add a star or treat the sign-in page as a successful star.** No credentials are entered or recorded. Real-run receipts are in [GitHub evidence](docs/evidence/github-star-sign-in.json) and [terminal evidence](docs/evidence/garcez-ls.json).
 
 To actually star the repository, open a named browser session, sign in manually, then run the separate authenticated definition:
 
@@ -104,20 +154,18 @@ url: http://localhost:3000
 prompt: Find a stay in Lisbon with Design and free cancellation, then open Casa Flora.
 backend:
   provider: laya
+browser:
+  args:
+    headed: true
+    color-scheme: light
 steps:
+  - instruction: Submit Find stays without entering filters
+    expect:
+      text: No matching stays
   - instruction: Enter Lisbon in Destination
     value: Lisbon
-    expect:
-      selector: '[name=destination]'
-      value: Lisbon
   - instruction: Choose Design in Category
-    expect:
-      selector: '[name=category]'
-      value: Design
   - instruction: Enable free cancellation
-    expect:
-      selector: '[name=cancellation]'
-      checked: true
   - instruction: Submit Find stays
     expect:
       text: 1 matching stay
@@ -166,8 +214,7 @@ expect:
 Use your app's URL, controls, and expected outcomes. Save the definition as `stay.test.yaml` (or `.yml` / `.json`), then run:
 
 ```sh
-./bin/jev-test validate stay.test.yaml
-./bin/jev-test run stay.test.yaml --report-dir artifacts/results
+agent-browser-jev test stay.test.yaml
 ```
 
 ### Example definitions
@@ -176,10 +223,44 @@ Use your app's URL, controls, and expected outcomes. Save the definition as `sta
 | --- | --- | --- |
 | Terminal command | [YAML](examples/garcez-ls.yaml) · [JSON](examples/garcez-ls.json) | Public garcez.dev; checks all six `ls` entries in order |
 | GitHub Star sign-in gate | [YAML](examples/github-star-sign-in.yaml) | Signed-out browser; checks sign-in, not a star |
+| GitHub repository tour (5 checked steps) | [YAML](examples/github-repository-tour.yaml) | Signed-out browser; README, LICENSE, return navigation, then sign-in gate |
+| Stay-search journey (6 steps, no selectors) | [YAML](examples/stay-search-journey.yaml) | Compatible local app at port 3000; no results, filter selection, matching stay, then details |
 | GitHub star | [YAML](examples/github-star.yaml) | Manually signed-in session; changes account state; not live-verified |
 | Form, select, checkbox, details | [YAML](examples/stay-search.yaml) · [JSON](examples/stay-search.json) | Your compatible local stay-search app at port 3000 |
 
-The CLI automatically continues paused calls. It emits JSON and JUnit reports and returns exit code **0 only for a passed test**, 1 for failed/blocked/uncertain, 2 for invalid input, and 130 for cancellation. Total-test time includes browser startup, inference, input, and assertions.
+### Browser configuration
+
+The installed `agent-browser --help` is the source of supported browser options (checked against version 0.39.1). Set them in the test file:
+
+```yaml
+browser:
+  args:
+    headed: true
+    color-scheme: dark
+    executable-path: /path/to/chrome
+    extension:
+      - /path/to/extension
+    args: --disable-dev-shm-usage
+  env:
+    AGENT_BROWSER_DEFAULT_TIMEOUT: "10000"
+    AGENT_BROWSER_SCREENSHOT_FORMAT: png
+```
+
+`browser.args` uses the long agent-browser option names **without `--`**. Strings supply option values; `true` supplies a flag; `false` explicitly disables a boolean option; lists repeat an option. This also supports options such as `config`, `engine`, `cdp`, `profile`, `proxy`, `allowed-domains`, `download-path`, and `ignore-https-errors`, subject to agent-browser's own validation and provider limits. These are browser settings; `backend.provider` still selects the decision model.
+
+The CLI inherits the process environment. `browser.env` overrides inherited `AGENT_BROWSER_*` variables, documented `BROWSER_USE_*` provider settings, `OBSCURA_ALLOW_PRIVATE_NETWORK`, and the standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY` variables for browser subprocesses only. Agent-browser resolves its normal config files, then environment variables, then flags. Set the session with the top-level `session` field or `--session`, not `browser.args.session`. Session precedence is CLI `--session`, YAML `session`, YAML `browser.env.AGENT_BROWSER_SESSION`, inherited `AGENT_BROWSER_SESSION`, then a generated isolated session. The runner owns JSON transport; `browser.args.json` is not accepted.
+
+Only use trusted test files: browser options can load extensions, init scripts, profiles, and plugins. Do not put credentials in YAML or browser flags. Inherit secret environment variables instead; no `${...}` interpolation is performed. Browser settings are kept in the private run state, not printed in the result. Videos can contain sensitive page content.
+
+### Results and recording
+
+The CLI automatically continues paused calls. It emits JSON and JUnit reports and returns exit code **0 only for a passed test**, 1 for failed/blocked/uncertain, 2 for invalid input, and 130 for cancellation. Total-test time includes browser startup, recording startup, inference, input, and assertions. Video finalization has a separate bounded 12-second cleanup budget, including after cancellation or a deadline.
+
+Each result contains `steps` (one entry per instruction, with `status` and `success`), `passed`, final `assertions`, `reason`, `video`, and JSON/JUnit report paths. Completed steps also state whether verification used an `assertion` or the `model`. A model-verified step is not independent proof; add `expect` to validate its result. Unvisited steps are `skipped`. All steps can pass while final assertions fail; `passed` remains false in that case.
+
+Videos are written to `.agent-browser-jev/videos/<run-id>.webm` (or under `JEV_STATE_DIR`), in a private directory. The video spans automatic pauses and is finalized at the terminal result. Recording failure prevents a passing CLI result; `video.error` explains the recording failure without exposing browser output. JSON and JUnit reports default to `.agent-browser-jev/reports/`; `--report-dir` changes the reports directory, not the video directory. Run state and artifacts are retained; remove them when no longer needed.
+
+Do not reuse a session for concurrent tests or unrelated browser commands. An explicit paused session is not reserved between calls. Abrupt process termination cannot finalize video; inspect the session and stop recording manually if needed. Recovery can reconcile an input receipt, but it will not continue actions after that run's recording has ended; start a new test for a complete video. `jev-test run` remains an alias for the same default-recording workflow; plugin runs record only when explicitly requested with `recordVideo: true`.
 
 The prompt and full step list are preserved in the request's task context. Each decision question focuses on the current instruction. Satisfied step assertions advance without another model call; known-unsatisfied assertions withhold DONE. Inputs still come from the selected decision backend. Root `expect` assertions, or an explicit final step expectation, are required. DONE alone cannot pass a test.
 

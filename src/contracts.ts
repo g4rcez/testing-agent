@@ -69,6 +69,42 @@ export const stepSchema = z
     (value) => value.valueFromEnv === undefined || value.selector !== undefined,
     "Sensitive field values require a selector binding",
   );
+export const browserSchema = z
+  .object({
+    args: z
+      .record(
+        z
+          .string()
+          .regex(/^[a-z][a-z0-9-]*$/)
+          .refine(
+            (key) => !["session", "json", "help", "version"].includes(key),
+            "Use the test session field; JSON output is managed by the runner",
+          ),
+        z.union([
+          z.string().max(10000),
+          z.boolean(),
+          z.array(z.string().max(10000)).min(1).max(100),
+        ]),
+      )
+      .optional(),
+    env: z
+      .record(
+        z
+          .string()
+          .regex(
+            /^(AGENT_BROWSER_[A-Z0-9_]+|BROWSER_USE_(API_KEY|PROFILE_ID|PROXY_COUNTRY|ENABLE_RECORDING)|OBSCURA_ALLOW_PRIVATE_NETWORK|HTTPS?_PROXY|ALL_PROXY|NO_PROXY)$/,
+          )
+          .refine(
+            (key) => key !== "AGENT_BROWSER_BIN",
+            "The browser executable cannot be set in a test file",
+          ),
+        z.string().max(10000),
+      )
+      .optional(),
+  })
+  .strict();
+export type BrowserConfig = z.infer<typeof browserSchema>;
+
 export const runSchema = z
   .object({
     name: z.string().trim().min(1).max(200).default("AI browser test"),
@@ -93,6 +129,8 @@ export const runSchema = z
       })
       .optional(),
     session: session.optional(),
+    browser: browserSchema.optional(),
+    recordVideo: z.boolean().optional(),
     url: z
       .url()
       .refine(

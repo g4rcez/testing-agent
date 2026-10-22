@@ -1,0 +1,45 @@
+# Signed-out, read-only flow. No credentials or account changes.
+name: Browse the repository and check the Star sign-in gate
+url: https://github.com/g4rcez/agent-browser-jev
+prompt: >-
+  Browse this repository's files, return to its Code page, and click Star.
+  The browser must be signed out. Stop at sign-in; do not enter credentials.
+backend:
+  provider: laya
+browser:
+  args:
+    headed: true
+    color-scheme: light
+  env:
+    AGENT_BROWSER_DEFAULT_TIMEOUT: "10000"
+maxActions: 20
+maxStepDecisions: 10
+totalTimeoutMs: 300000
+steps:
+  - instruction: Open README.md from the repository file list
+    expect:
+      text: agent-browser Jev/Laya tests
+      url: https://github.com/g4rcez/agent-browser-jev/blob/main/README.md
+      timeoutMs: 10000
+  - instruction: Return to the repository Code page using its repository name link
+    expect:
+      url: https://github.com/g4rcez/agent-browser-jev
+      timeoutMs: 10000
+  - instruction: Open LICENSE from the repository file list
+    expect:
+      text: MIT License
+      url: https://github.com/g4rcez/agent-browser-jev/blob/main/LICENSE
+      timeoutMs: 10000
+  - instruction: Return to the repository Code page using its repository name link
+    expect:
+      url: https://github.com/g4rcez/agent-browser-jev
+      timeoutMs: 10000
+  - instruction: Click Star near the repository name to open the GitHub sign-in page
+    expect:
+      text: Sign in to GitHub
+      url: https://github.com/login?return_to=%2Fg4rcez%2Fagent-browser-jev
+      timeoutMs: 10000
+expect:
+  - text: Sign in to GitHub
+    url: https://github.com/login?return_to=%2Fg4rcez%2Fagent-browser-jev
+    timeoutMs: 10000

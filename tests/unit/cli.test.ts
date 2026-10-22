@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSchema } from "../../src/contracts.ts";
@@ -42,6 +42,22 @@ async function validate(name: string, content: string, flags: string[] = []) {
 }
 
 describe("CLI test definitions", () => {
+  test("publishes the primary CLI without removing legacy entry points", async () => {
+    const metadata = await Bun.file("package.json").json();
+    expect(metadata.name).toBe("agent-tester");
+    expect(metadata.bin["agent-tester"]).toBe("./bin/agent-tester");
+    expect(metadata.bin["agent-browser-plugin-jev"]).toBe(
+      "./bin/agent-browser-plugin-jev",
+    );
+    for (const path of Object.values(metadata.bin))
+      expect(await Bun.file(String(path)).exists()).toBe(true);
+    expect(metadata.bin["agent-browser-jev"]).toBe("./bin/agent-browser-jev");
+    expect(metadata.bin["jev-test"]).toBe("./bin/jev-test");
+    expect(await Bun.file(metadata.bin["agent-browser-jev"]).text()).toContain(
+      "../dist/cli.js",
+    );
+  });
+
   test("ships equivalent JSON/YAML examples and valid GitHub definitions", async () => {
     for (const name of ["garcez-ls", "stay-search"]) {
       const json = await Bun.file(`examples/${name}.json`).json();
@@ -50,13 +66,112 @@ describe("CLI test definitions", () => {
       );
       expect(runSchema.parse(yaml)).toEqual(runSchema.parse(json));
     }
-    for (const name of ["github-star", "github-star-sign-in"]) {
+    for (const name of [
+      "github-star",
+      "github-star-sign-in",
+      "github-repository-tour",
+      "stay-search-journey",
+    ]) {
       const yaml = Bun.YAML.parse(
         await Bun.file(`examples/${name}.yaml`).text(),
       );
       expect(runSchema.safeParse(yaml).success).toBe(true);
+      if (["github-repository-tour", "stay-search-journey"].includes(name)) {
+        expect(runSchema.parse(yaml).steps.length).toBeGreaterThanOrEqual(5);
+        expect(JSON.stringify(yaml)).not.toContain('"selector"');
+      }
     }
   });
+  test("test command records by default and prints steps plus final result as JSON", async () => {
+    const fake = join(directory, "agent-browser");
+    const log = join(directory, "commands.jsonl");
+    await Bun.write(
+      fake,
+      `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+await import("node:fs/promises").then(({appendFile}) => appendFile(process.env.COMMAND_LOG, JSON.stringify(args) + "\\n"));
+if (process.env.FAIL_VIDEO_STOP && args.includes("stop")) {
+  console.log(JSON.stringify({success:false,data:null,error:"private failure"}));
+  process.exit(0);
+}
+let data = {};
+if (args.includes("eval")) {
+  const source = await Bun.stdin.text();
+  data = {result: source.includes('"type":"observe"')
+    ? {url:"https://example.com",title:"Example",text:"Details",tree:"Details",elements:[],targets:{},controls:[],documentId:"11111111-1111-4111-8111-111111111111",snapshotId:"22222222-2222-4222-8222-222222222222"}
+    : {passed:true,checks:[{passed:true,index:0,message:"Passed"}]}};
+}
+console.log(JSON.stringify({success:true,data}));
+`,
+    );
+    await chmod(fake, 0o700);
+    const path = join(directory, "run.yaml");
+    await Bun.write(
+      path,
+      yaml.replace(
+        "  - Open details",
+        "  - instruction: Open details\n    expect:\n      text: Details",
+      ),
+    );
+    const child = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
+      env: {
+        ...process.env,
+        AGENT_BROWSER_BIN: fake,
+        COMMAND_LOG: log,
+        JEV_STATE_DIR: join(directory, "state"),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    const result = JSON.parse(stdout);
+    expect(result.passed).toBe(true);
+    expect(result.steps).toEqual([
+      {
+        step: 1,
+        instruction: "Open details",
+        status: "passed",
+        success: true,
+        verification: "assertion",
+      },
+    ]);
+    expect(result.video.status).toBe("saved");
+    expect(result.video.path.endsWith(".webm")).toBe(true);
+    const commands = (await Bun.file(log).text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(commands[0]).toContain("record");
+    expect(commands[0]).toContain("start");
+    expect(commands.at(-1)).toContain("stop");
+    expect((await Bun.file(result.reports.json).json()).steps).toEqual(
+      result.steps,
+    );
+    const failing = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
+      env: {
+        ...process.env,
+        AGENT_BROWSER_BIN: fake,
+        COMMAND_LOG: log,
+        FAIL_VIDEO_STOP: "true",
+        JEV_STATE_DIR: join(directory, "failed-state"),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const failed = JSON.parse(await new Response(failing.stdout).text());
+    expect(await failing.exited).toBe(1);
+    expect(failed.passed).toBe(false);
+    expect(failed.video.status).toBe("failed");
+    expect(failed.steps[0].success).toBe(true);
+    expect(failed.reason).not.toContain("private failure");
+  });
+
   test("preserves JSON validation, including extensionless files", async () => {
     for (const name of ["test.json", "extensionless"]) {
       const result = await validate(name, JSON.stringify(definition));

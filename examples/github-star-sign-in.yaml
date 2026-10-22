@@ -12,11 +12,9 @@ maxStepDecisions: 5
 steps:
   - instruction: Click Star near the repository name to open the GitHub sign-in page
     expect:
-      selector: 'input#login_field'
-      visible: true
+      text: Sign in to GitHub
       timeoutMs: 10000
 expect:
   - url: https://github.com/login?return_to=%2Fg4rcez%2Fagent-browser-jev
-    selector: 'input#login_field'
-    visible: true
+    text: Sign in to GitHub
     timeoutMs: 10000

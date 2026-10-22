@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agent-browser-plugin-jev",
+      "name": "agent-tester",
       "dependencies": {
         "zod": "4.6.7",
       },

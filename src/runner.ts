@@ -1,9 +1,12 @@
 import { watch } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import { z } from "zod";
 import {
   Browser,
   StaleDecisionError,
   BrowserDeadlineError,
+  BrowserCommandRejectedError,
 } from "./browser.ts";
 import { backendConfig, decide, fieldValue } from "./decision.ts";
 import {
@@ -12,6 +15,7 @@ import {
   type RunInput,
   type Decision,
   type Assertion,
+  type BrowserConfig,
 } from "./contracts.ts";
 import type { AssertionResult } from "./assertions.ts";
 import {
@@ -22,6 +26,7 @@ import {
   statePath,
   requestCancellation,
   SessionBusyError,
+  stateRoot,
 } from "./store.ts";
 
 const targetSchema = z.object({
@@ -89,6 +94,13 @@ const stateSchema = z.object({
   reason: z.string().nullable(),
   unchangedActions: z.number().int().min(0),
   staleDecisions: z.number().int().min(0),
+  video: z
+    .object({
+      path: z.string(),
+      status: z.enum(["starting", "recording", "saved", "failed"]),
+      error: z.string().optional(),
+    })
+    .optional(),
   assertions: z.array(
     z.object({ passed: z.boolean(), index: z.number(), message: z.string() }),
   ),
@@ -101,13 +113,14 @@ export type RunnerDependencies = {
     session: string,
     deadline: number,
     signal?: AbortSignal,
+    config?: BrowserConfig,
   ) => BrowserPort;
   decide: typeof decide;
   fieldValue: typeof fieldValue;
 };
 const defaults: RunnerDependencies = {
-  browser: (session, deadline, signal) =>
-    new Browser(session, deadline, signal),
+  browser: (session, deadline, signal, config) =>
+    new Browser(session, deadline, signal, config),
   decide,
   fieldValue,
 };
@@ -125,6 +138,29 @@ export function summarize(state: RunState) {
     session: state.session,
     name: state.input.name,
     status: state.status,
+    passed:
+      state.status === "completed" &&
+      state.assertions.length > 0 &&
+      state.assertions.every((check) => check.passed),
+    steps: state.input.steps.map((step, index) => {
+      const completed = state.completedSteps[index];
+      const status = completed
+        ? "passed"
+        : index === state.stepIndex
+          ? ["paused", "running"].includes(state.status)
+            ? "pending"
+            : "failed"
+          : "skipped";
+      return {
+        step: index + 1,
+        instruction: step.instruction,
+        status,
+        success: status === "passed",
+        ...(completed ? { verification: completed.verification } : {}),
+        ...(status === "failed" ? { reason: state.reason } : {}),
+      };
+    }),
+    video: state.video ?? null,
     currentStep:
       state.stepIndex < state.input.steps.length ? state.stepIndex + 1 : null,
     totalSteps: state.input.steps.length,
@@ -178,7 +214,15 @@ export async function startRun(
   const state: RunState = {
     version: 2,
     runId,
-    session: input.session ?? "jev-" + runId,
+    session: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{1,80}$/)
+      .parse(
+        input.session ??
+          input.browser?.env?.AGENT_BROWSER_SESSION ??
+          process.env.AGENT_BROWSER_SESSION ??
+          "jev-" + runId,
+      ),
     input,
     status: "paused",
     createdAt: now,
@@ -212,7 +256,10 @@ export async function recoverRun(
 ): Promise<RunState> {
   return executeRun(await loadRun(runId), dependencies, true);
 }
-export async function cancelRun(runId: string) {
+export async function cancelRun(
+  runId: string,
+  dependencies: RunnerDependencies = defaults,
+) {
   const state = await loadRun(runId);
   if (!["paused", "running"].includes(state.status)) return summarize(state);
   await requestCancellation(runId);
@@ -230,6 +277,7 @@ export async function cancelRun(runId: string) {
       current.status = "cancelled";
       current.reason = "Cancelled by user";
       current.endedAt = Date.now();
+      await finishVideo(current, dependencies);
       await saveRun(current);
       return summarize(current);
     } finally {
@@ -255,6 +303,41 @@ function recordAction(
     executeMs: Date.now() - pending.startedAt,
   });
 }
+async function finishVideo(
+  state: RunState,
+  dependencies: RunnerDependencies,
+): Promise<void> {
+  if (!state.video || !["starting", "recording"].includes(state.video.status))
+    return;
+  const unconfirmed = state.video.status === "starting";
+  if (unconfirmed && state.session !== "jev-" + state.runId) {
+    state.video.status = "failed";
+    state.video.error =
+      "Video startup outcome is unknown in a reused session; inspect it and stop recording manually if needed";
+    return;
+  }
+  try {
+    // Finalization must still work after the execution signal or deadline expires.
+    await dependencies
+      .browser(
+        state.session,
+        Date.now() + 12_000,
+        undefined,
+        state.input.browser,
+      )
+      .command(["record", "stop"]);
+    state.video.status = unconfirmed ? "failed" : "saved";
+  } catch {
+    state.video.status = "failed";
+    state.video.error =
+      "Video finalization failed; inspect the browser session for an active recording";
+    if (state.status === "completed") {
+      state.status = "failed";
+      state.reason = state.video.error;
+    }
+  }
+}
+
 async function executeRun(
   initial: RunState,
   dependencies: RunnerDependencies,
@@ -289,6 +372,7 @@ async function executeRun(
       state.session,
       callDeadline,
       controller.signal,
+      state.input.browser,
     );
     if (state.pendingAction) {
       const receipt = browser.receipt
@@ -305,6 +389,7 @@ async function executeRun(
         state.reason =
           "Interrupted input has no confirmed execution receipt; automatic replay is disabled";
         state.endedAt = Date.now();
+        await finishVideo(state, dependencies);
         await saveRun(state);
         return state;
       }
@@ -316,6 +401,39 @@ async function executeRun(
     await saveRun(state);
     let executed = 0;
     try {
+      if (state.input.recordVideo && !state.video) {
+        const directory = resolve(stateRoot(), "videos");
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        state.video = {
+          path: resolve(directory, `${state.runId}.webm`),
+          status: "starting",
+        };
+        await saveRun(state);
+        try {
+          await browser.command(["record", "start", state.video.path]);
+        } catch (error) {
+          if (error instanceof BrowserCommandRejectedError)
+            state.video.status = "failed";
+          state.video.error =
+            error instanceof BrowserCommandRejectedError
+              ? "Video recording could not start; check agent-browser and ffmpeg"
+              : "Video startup outcome is unknown; recording acknowledgement was interrupted";
+          throw new Error(state.video.error);
+        }
+        state.video.status = "recording";
+        await saveRun(state);
+      } else if (state.video?.status === "starting") {
+        state.video.error =
+          "Video start was interrupted; inspect the browser session before retrying";
+        throw new Error(state.video.error);
+      } else if (
+        state.input.recordVideo &&
+        state.video?.status !== "recording"
+      ) {
+        throw new Error(
+          "Video recording has already ended; start a new test instead of continuing without video",
+        );
+      }
       if (url) {
         state.pendingAction = {
           actionId: crypto.randomUUID(),
@@ -504,6 +622,12 @@ async function executeRun(
       } else if (controller.signal.reason === "cancelled") {
         state.status = "cancelled";
         state.reason = "Cancelled by user";
+      } else if (
+        state.video?.status === "failed" ||
+        state.video?.status === "starting"
+      ) {
+        state.status = "blocked";
+        state.reason = state.video.error ?? "Video recording failed";
       } else if (Date.now() >= totalDeadline) {
         state.status = "failed";
         state.reason = "Total test deadline exceeded";
@@ -518,8 +642,10 @@ async function executeRun(
         state.reason = error instanceof Error ? error.message : "Run failed";
       }
     }
-    if (!["running", "paused"].includes(state.status))
+    if (!["running", "paused"].includes(state.status)) {
+      await finishVideo(state, dependencies);
       state.endedAt = Date.now();
+    }
     await saveRun(state);
     return state;
   } finally {

@@ -9,7 +9,7 @@ import {
   assertionResultSchema,
   type AssertionResult,
 } from "./assertions.ts";
-import type { Assertion } from "./contracts.ts";
+import type { Assertion, BrowserConfig } from "./contracts.ts";
 
 const exec = promisify(execFile);
 const candidateSchema = z.object({
@@ -51,12 +51,14 @@ const receiptSchema = z.discriminatedUnion("status", [
 ]);
 export class StaleDecisionError extends Error {}
 export class BrowserDeadlineError extends Error {}
+export class BrowserCommandRejectedError extends Error {}
 
 export class Browser {
   constructor(
     readonly session: string,
     readonly deadline: number,
     readonly signal?: AbortSignal,
+    readonly config?: BrowserConfig,
   ) {}
 
   async command(args: string[], stdin?: string): Promise<unknown> {
@@ -67,11 +69,22 @@ export class Browser {
     try {
       const pending = exec(
         process.env.AGENT_BROWSER_BIN ?? "agent-browser",
-        ["--session", this.session, "--json", ...args],
+        [
+          ...Object.entries(this.config?.args ?? {}).flatMap(([key, value]) =>
+            (Array.isArray(value) ? value : [value]).flatMap((item) =>
+              item === true ? ["--" + key] : ["--" + key, String(item)],
+            ),
+          ),
+          "--session",
+          this.session,
+          "--json",
+          ...args,
+        ],
         {
           timeout: Math.min(12_000, remaining),
           maxBuffer: 2_000_000,
           encoding: "utf8",
+          env: { ...process.env, ...this.config?.env },
           ...(this.signal ? { signal: this.signal } : {}),
         },
       );
@@ -85,7 +98,9 @@ export class Browser {
     }
     const response = responseSchema.parse(JSON.parse(stdout));
     if (!response.success)
-      throw new Error("agent-browser " + args[0] + " rejected the command");
+      throw new BrowserCommandRejectedError(
+        "agent-browser " + args[0] + " rejected the command",
+      );
     return response.data;
   }
 

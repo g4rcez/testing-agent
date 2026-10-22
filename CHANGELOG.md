@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1 — agent-tester
+
+First publication under the `agent-tester` package name. Earlier entries describe development versions before this package was published.
+
+- Add `agent-tester test` and preserve existing CLI and plugin entry points.
+- Add selector-free, multi-step examples, browser configuration, default video recording, and JSON step/final results.
+- Add a bundled JSON Schema and formatting-preserving `lsp` annotation for YAML and JSON.
+- Check PRs without publishing; release npm packages and GitHub releases from green `main` builds using Conventional Commits.
+
 ## 0.2.0
 
 - Accept `.yaml` and `.yml` CLI test definitions with the same validation and limits as JSON, using Bun's built-in YAML parser.

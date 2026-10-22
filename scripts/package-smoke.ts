@@ -56,9 +56,14 @@ const env = {
   JEV_STATE_DIR: join(directory, "state"),
 };
 try {
-  await exec("bun", ["pm", "pack", "--destination", directory], {
-    maxBuffer: 2_000_000,
-  });
+  await exec("bun", ["run", "build"], { maxBuffer: 2_000_000 });
+  await exec(
+    "npm",
+    ["pack", "--ignore-scripts", "--pack-destination", directory],
+    {
+      maxBuffer: 2_000_000,
+    },
+  );
   const archive = (await readdir(directory)).find((name) =>
     name.endsWith(".tgz"),
   );
@@ -74,20 +79,50 @@ try {
     join(directory, "package.json"),
     JSON.stringify({
       private: true,
-      dependencies: { "agent-browser-plugin-jev": "./" + archive },
+      dependencies: { "agent-tester": "./" + archive },
     }),
   );
   await exec("bun", ["install", "--ignore-scripts"], {
     cwd: directory,
     maxBuffer: 2_000_000,
   });
-  const bin = join(directory, "node_modules", ".bin", "jev-test");
+  const bin = join(directory, "node_modules", ".bin", "agent-tester");
+  const installed = await Bun.file(
+    join(directory, "node_modules", "agent-tester", "package.json"),
+  ).json();
+  if (
+    installed.name !== "agent-tester" ||
+    installed.version !== (await Bun.file("package.json").json()).version
+  )
+    throw new Error("Installed package identity does not match the release");
+  for (const name of ["jev-test", "agent-browser-jev"]) {
+    const alias = await exec(
+      join(directory, "node_modules", ".bin", name),
+      ["--help"],
+      { cwd: directory, env },
+    );
+    if (!alias.stdout.includes("AI-driven browser tests"))
+      throw new Error("Installed legacy CLI failed");
+  }
   const plugin = join(
     directory,
     "node_modules",
     ".bin",
     "agent-browser-plugin-jev",
   );
+  for (const path of [
+    ...Object.values(installed.bin),
+    "schema/test.schema.json",
+    "dist/cli.js",
+    "dist/plugin.js",
+  ]) {
+    if (
+      !(await Bun.file(
+        join(directory, "node_modules", "agent-tester", String(path)),
+      ).exists())
+    )
+      throw new Error("Declared package content is missing");
+  }
   const help = await exec(bin, ["--help"], { cwd: directory, env });
   if (!help.stdout.includes("AI-driven browser tests"))
     throw new Error("Installed CLI help failed");
@@ -129,9 +164,29 @@ try {
     expect: [{ text: "Completed" }],
   };
   await Bun.write(join(directory, "test.json"), JSON.stringify(testCase));
+  await exec(bin, ["lsp", "test.json"], { cwd: directory, env });
+  const annotated = await Bun.file(join(directory, "test.json")).json();
+  if (
+    Object.keys(annotated)[0] !== "$schema" ||
+    !(await Bun.file(
+      resolve(directory, decodeURIComponent(annotated.$schema)),
+    ).exists())
+  )
+    throw new Error("Installed JSON editor schema reference failed");
+  await Bun.write(
+    join(directory, "editor.yaml"),
+    "# Keep this comment\nname: Editor fixture\n",
+  );
+  await exec(bin, ["lsp", "editor.yaml"], { cwd: directory, env });
+  if (
+    !(await Bun.file(join(directory, "editor.yaml")).text()).startsWith(
+      "# yaml-language-server: $schema=",
+    )
+  )
+    throw new Error("Installed YAML editor schema reference failed");
   const result = JSON.parse(
     (
-      await exec(bin, ["run", "test.json", "--report-dir", "reports"], {
+      await exec(bin, ["test", "test.json", "--report-dir", "reports"], {
         cwd: directory,
         env,
         timeout: 55_000,
@@ -144,6 +199,13 @@ try {
     !result.assertions.every((item: { passed: boolean }) => item.passed)
   )
     throw new Error("Installed test did not pass independent assertions");
+  if (
+    result.video?.status !== "saved" ||
+    !(Bun.file(result.video.path).size > 0) ||
+    !result.passed ||
+    !result.steps.every((step: { success: boolean }) => step.success)
+  )
+    throw new Error("Installed CLI did not produce a successful recorded test");
   if (!(await Bun.file(result.reports.junit).text()).includes('failures="0"'))
     throw new Error("JUnit result is missing");
   await Bun.write(
@@ -184,6 +246,8 @@ try {
         "clean installation",
         "help",
         "schema",
+        "installed JSON/YAML autocomplete",
+        "default video recording",
         "manifest",
         "invalid input exit",
         "real browser test",

@@ -10,4 +10,4 @@ Credentials are read from environment variables. Use a step's `valueFromEnv` for
 
 Input and provider responses are size-limited. Provider calls reject redirects and support cancellation and deadlines. Recover never replays unknown input. An absent receipt, including after navigation destroys its document, leaves an interrupted run `uncertain` for inspection.
 
-Report vulnerabilities privately to the repository maintainer using the hosting platform's private security reporting when available. Do not include credentials or private page captures in public issues. The repository's publication owner and reporting endpoint must be configured before public publication.
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/g4rcez/agent-browser-jev/security/advisories/new). Private reporting is enabled for this repository. Do not include credentials or private page captures in public issues. The npm publication target is `agent-tester`, maintained through `g4rcez/agent-browser-jev`.

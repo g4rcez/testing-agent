@@ -2,13 +2,15 @@
 
 Scope: a local CLI and agent-browser plugin for AI-driven tests of ordinary HTML/ARIA web apps. agent-browser owns browser launch, sessions, evaluation, and artifacts. Jev/Laya choose only offered operations and targets. This release does not claim arbitrary-site success or a universal model accuracy guarantee.
 
-## Work ledger
+## Historical work ledger
+
+The results below predate the `agent-tester` package rename and new CLI/schema/recording work. They are historical evidence, not approval of the current release. The current release must pass the full Linux/macOS CI matrix and installed-package checks in `.github/workflows/ci.yml`.
 
 1. Completed: guarded node identity, visibility, enabled state, occlusion, form state, and one-use input receipts. Dropdowns bind the actual option node and reject changed values, replacement options, and newly disabled optgroups without emitting input. Duplicate option values select the observed option. Browser regressions reproduced the original failures before the fix.
 2. Completed: deterministic final assertions, durable version-2 state, transactional ownership, cancellation, call/total deadlines, and real SIGKILL recovery checks.
-3. Completed locally: CLI, JSON/JUnit reports, examples, MIT license, CI configuration, release/security documentation, and installed-tarball browser verification. The local release check passed 39 tests with 148 assertions, type checking, formatting, and builds; dependency audit reported no vulnerabilities. The browser suite also passed all 17 cases with agent-browser 0.32.1; the full check used 0.39.1. Hosted CI has not run because no remote is configured.
+3. Completed locally: CLI, JSON/JUnit reports, examples, MIT license, CI configuration, release/security documentation, and installed-tarball browser verification. The local release check passed 39 tests with 148 assertions, type checking, formatting, and builds; dependency audit reported no vulnerabilities. The browser suite also passed all 17 cases with agent-browser 0.32.1; the full check used 0.39.1. At that time, hosted CI had not run because no remote was configured.
 4. Completed for local Laya: all six acceptance cases passed in each of three repetitions, using the pinned checkpoint on MPS. [The final runtime receipt](evidence/live-laya-2026-10-20T20-06-22-487Z.json) records 18/18 runs and 36 model-selected actions for runtime commit `4f91770c70090208a6a60abe278ab5fafb76932b`. Decision-request latency was 65–338 ms, median 145 ms and p95 202 ms; this excludes browser startup/input/assertions. The receipt's dirty flag reflects earlier evidence files and review receipts; runtime source was unchanged throughout the run. Historical failed diagnostic receipts remain available. These local fixtures do not establish general website accuracy. Live Jev requires credentials that are not configured in this workspace.
-5. Completed for runtime `4f91770c70090208a6a60abe278ab5fafb76932b`: [fresh review](evidence/runtime-review.md) returned APPROVE / GO — repository evidence only, with no remaining high or critical findings. The earlier dropdown blocker, ineffective unit assertion, and Bun minimum mismatch were corrected and verified. The remaining low finding, omitted README-linked package documentation, was corrected by including release, contributor, and evidence documents in the archive. Runtime source remains identical to the reviewed revision. Publication and unavailable external evidence are not approved by this result.
+5. Completed for runtime `4f91770c70090208a6a60abe278ab5fafb76932b`: [fresh review](evidence/runtime-review.md) returned APPROVE / GO — repository evidence only, with no remaining high or critical findings. The earlier dropdown blocker, ineffective unit assertion, and Bun minimum mismatch were corrected and verified. The remaining low finding, omitted README-linked package documentation, was corrected by including release, contributor, and evidence documents in the archive. This historical review does not approve the changed runtime or publication of the current revision.
 
 ## Release gates
 
@@ -22,4 +24,4 @@ Scope: a local CLI and agent-browser plugin for AI-driven tests of ordinary HTML
 - Live-model receipts identify model revision, app fixture, successful/failed outcomes, and measured timing boundaries.
 - Unit/browser/package checks and applicable dependency checks pass. Unsupported or unavailable external evidence remains explicitly recorded.
 
-Publishing to npm or creating a public remote is a separate external action. This workspace has no configured remote or registry publication target.
+The repository is `g4rcez/agent-browser-jev`, and the npm target is `agent-tester`, beginning at `0.0.1`. Publication is approved only after the checks in the [release policy](RELEASE.md) pass; authenticated registry access is still required.

@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Editor JSON Schema reference. Ignored when running the test."
+    },
+    "name": {
+      "default": "AI browser test",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10000
+    },
+    "steps": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          {
+            "type": "object",
+            "properties": {
+              "instruction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "valueFromEnv": {
+                "type": "string",
+                "pattern": "^[A-Z_][A-Z0-9_]*$"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "expect": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "selector": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "visible": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "checked": {
+                    "type": "boolean"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000
+                  },
+                  "timeoutMs": {
+                    "default": 2000,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 10000
+                  }
+                }
+              }
+            },
+            "required": [
+              "instruction"
+            ]
+          }
+        ]
+      }
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "jev",
+            "laya"
+          ]
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "apiKeyEnv": {
+          "type": "string",
+          "pattern": "^[A-Z_][A-Z0-9_]*$"
+        }
+      },
+      "required": [
+        "provider"
+      ]
+    },
+    "textModel": {
+      "type": "object",
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "apiKeyEnv": {
+          "default": "TEXT_MODEL_API_KEY",
+          "type": "string",
+          "pattern": "^[A-Z_][A-Z0-9_]*$"
+        }
+      },
+      "required": [
+        "baseUrl",
+        "model"
+      ]
+    },
+    "session": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]{1,80}$"
+    },
+    "browser": {
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "minItems": 1,
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 10000
+                }
+              }
+            ]
+          }
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^(AGENT_BROWSER_[A-Z0-9_]+|BROWSER_USE_(API_KEY|PROFILE_ID|PROXY_COUNTRY|ENABLE_RECORDING)|OBSCURA_ALLOW_PRIVATE_NETWORK|HTTPS?_PROXY|ALL_PROXY|NO_PROXY)$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 10000
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "recordVideo": {
+      "type": "boolean"
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "maxActions": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "maxStepDecisions": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "actionsPerCall": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "timeoutMs": {
+      "default": 45000,
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 45000
+    },
+    "totalTimeoutMs": {
+      "default": 120000,
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 1800000
+    },
+    "expect": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "selector": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "checked": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "timeoutMs": {
+            "default": 2000,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        }
+      }
+    },
+    "minConfidence": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "required": [
+    "prompt",
+    "steps",
+    "backend"
+  ],
+  "title": "agent-tester test",
+  "description": "Ordered browser test instructions, browser configuration, and expected results. Final assertions are required; model DONE alone cannot pass a test."
+}

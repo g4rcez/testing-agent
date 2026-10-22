@@ -1,0 +1,34 @@
+# Requires the compatible stay-search app at localhost:3000 (tests/browser/app.html).
+# Field steps use model completion; result steps use independent text assertions.
+name: Recover from no matching stays and open Casa Flora
+url: http://localhost:3000
+prompt: >-
+  Submit the empty stay search and verify that no stays match.
+  Then find a stay in Lisbon with Design and free cancellation.
+  Verify that one stay matches, then open Casa Flora and check the applied filters.
+backend:
+  provider: laya
+browser:
+  args:
+    headed: true
+    color-scheme: light
+  env:
+    AGENT_BROWSER_DEFAULT_TIMEOUT: "10000"
+maxActions: 25
+totalTimeoutMs: 300000
+steps:
+  - instruction: Submit Find stays without entering any filters
+    expect:
+      text: No matching stays
+  - instruction: Enter Lisbon in Destination
+    value: Lisbon
+  - instruction: Choose Design in Category
+  - instruction: Enable Free cancellation
+  - instruction: Submit Find stays with the selected filters
+    expect:
+      text: 1 matching stay
+  - instruction: Open View Casa Flora from the matching results
+    expect:
+      text: "Applied filters: Lisbon / Design / cancellation enabled"
+expect:
+  - text: "Applied filters: Lisbon / Design / cancellation enabled"
