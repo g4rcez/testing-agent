@@ -22,7 +22,7 @@
     "agent-browser-jev": "./bin/agent-browser-jev"
   },
   "scripts": {
-    "build": "bun run schema:generate && bun build src/plugin.ts src/cli.ts --outdir dist --target bun --external zod",
+    "build": "bun run schema:generate && bun build src/plugin.ts src/cli.ts --outdir dist --target bun --external zod --external @receptron/laya",
     "schema:generate": "bun run scripts/generate-schema.ts",
     "test": "bun test tests/unit tests/browser",
     "test:unit": "bun test tests/unit",
@@ -74,5 +74,8 @@
     "@types/bun": "1.4.3",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
+  },
+  "optionalDependencies": {
+    "@receptron/laya": "0.2.0"
   }
 }

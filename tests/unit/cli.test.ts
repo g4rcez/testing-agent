@@ -1,11 +1,17 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runSchema } from "../../src/contracts.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "jev-cli-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
+const backendProbe = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  fetch: () => new Response(null, { status: 405 }),
+});
+afterAll(() => backendProbe.stop(true));
 const definition = {
   name: "Example",
   url: "https://example.com",
@@ -107,6 +113,49 @@ describe("CLI test definitions", () => {
       }
     }
   });
+  test("an offline backend stops before browser startup and asks for setup", async () => {
+    const closed = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(),
+    });
+    const baseUrl = String(closed.url);
+    closed.stop(true);
+    const path = join(directory, "offline.json");
+    await Bun.write(
+      path,
+      JSON.stringify({ ...definition, backend: { provider: "laya", baseUrl } }),
+    );
+    const child = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
+      env: {
+        ...process.env,
+        AGENT_BROWSER_BIN: "/does-not-exist-browser",
+        JEV_STATE_DIR: join(directory, "offline-state"),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr).error).toContain("no browser was started");
+    expect(JSON.parse(stderr).setup).toContain("testing-agent setup laya");
+    expect(
+      await stat(join(directory, "offline-state")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+    expect(
+      (await validate("offline-validation.json", await Bun.file(path).text()))
+        .code,
+    ).toBe(0);
+  });
+
   test("test command records by default and prints steps plus final result as JSON", async () => {
     const fake = join(directory, "agent-browser");
     const log = join(directory, "commands.jsonl");
@@ -143,6 +192,7 @@ console.log(JSON.stringify({success:true,data}));
         ...process.env,
         AGENT_BROWSER_BIN: fake,
         COMMAND_LOG: log,
+        LAYA_BASE_URL: String(backendProbe.url),
         JEV_STATE_DIR: join(directory, "state"),
       },
       stdout: "pipe",
@@ -184,6 +234,7 @@ console.log(JSON.stringify({success:true,data}));
         AGENT_BROWSER_BIN: fake,
         COMMAND_LOG: log,
         FAIL_VIDEO_STOP: "true",
+        LAYA_BASE_URL: String(backendProbe.url),
         JEV_STATE_DIR: join(directory, "failed-state"),
       },
       stdout: "pipe",

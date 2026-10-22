@@ -1,0 +1,10 @@
+name: Open About on garcez.dev
+url: https://garcez.dev/
+prompt: Open the About page and verify its content.
+backend:
+  provider: laya
+steps:
+  - instruction: Click About in the main navigation
+    expect:
+      url: https://garcez.dev/about
+      text: Product engineering with frontend depth.

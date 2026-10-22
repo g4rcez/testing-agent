@@ -1,0 +1,70 @@
+{
+  "runId": "8c343a37-22ed-418b-944b-de73271f7625",
+  "name": "Open About on garcez.dev",
+  "status": "completed",
+  "passed": true,
+  "steps": [
+    {
+      "step": 1,
+      "instruction": "Click About in the main navigation",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    }
+  ],
+  "currentStep": null,
+  "totalSteps": 1,
+  "completedSteps": [
+    {
+      "instruction": "Click About in the main navigation",
+      "verification": "assertion"
+    }
+  ],
+  "actions": [
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "Open terminal",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.1365,
+      "elapsedMs": 5935,
+      "inferenceMs": 1854,
+      "executeMs": 44
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "Close",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.1409,
+      "elapsedMs": 9755,
+      "inferenceMs": 1766,
+      "executeMs": 35
+    },
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "About",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.1725,
+      "elapsedMs": 13613,
+      "inferenceMs": 1781,
+      "executeMs": 60
+    }
+  ],
+  "assertions": [
+    {
+      "passed": true,
+      "index": 0,
+      "message": "Assertion passed"
+    }
+  ],
+  "reason": null,
+  "elapsedMs": 13814,
+  "resume": null,
+  "video": {
+    "status": "saved",
+    "path": "../assets/garcez-about.webm"
+  },
+  "evidence": "Real local @receptron/laya@0.2.0 execution of examples/garcez-about.yaml through the source CLI. Both URL and page-text assertions passed. Session and machine-local artifact paths are omitted; actions and model results are unchanged. This is not evidence that the three-step terminal example passes."
+}

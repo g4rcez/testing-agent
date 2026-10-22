@@ -82,7 +82,7 @@ try {
       dependencies: { "testing-agent": "./" + archive },
     }),
   );
-  await exec("bun", ["install", "--ignore-scripts"], {
+  await exec("bun", ["install", "--ignore-scripts", "--omit=optional"], {
     cwd: directory,
     maxBuffer: 2_000_000,
   });
@@ -128,6 +128,31 @@ try {
   if (!help.stdout.includes("AI-driven browser tests"))
     throw new Error("Installed CLI help failed");
   await exec(bin, ["schema"], { cwd: directory, env });
+  let optionalPresent = false;
+  try {
+    Bun.resolveSync(
+      "@receptron/laya",
+      join(directory, "node_modules/testing-agent/dist"),
+    );
+    optionalPresent = true;
+  } catch {}
+  if (optionalPresent)
+    throw new Error("Package smoke must omit the optional model runtime");
+  let setupGuidance = false;
+  try {
+    await exec(bin, ["setup", "laya"], {
+      cwd: directory,
+      env,
+      timeout: 10_000,
+    });
+  } catch (error) {
+    const failure = error as { code?: number; stderr?: string };
+    setupGuidance =
+      failure.code === 2 &&
+      Boolean(failure.stderr?.includes("Optional Laya runtime is unavailable"));
+  }
+  if (!setupGuidance)
+    throw new Error("Missing optional runtime did not produce setup guidance");
   const manifest = Bun.spawn([plugin], {
     cwd: directory,
     env,
@@ -244,7 +269,8 @@ try {
       archive,
       checks: [
         "archive contents",
-        "clean installation",
+        "clean installation without optional model runtime",
+        "missing optional runtime setup guidance",
         "help",
         "schema",
         "installed JSON/YAML autocomplete",
