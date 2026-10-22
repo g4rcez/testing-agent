@@ -12,7 +12,7 @@ import {
 import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
-import { BackendSetupError, checkBackend } from "./backend.ts";
+import { BackendSetupError, ensureBackend } from "./backend.ts";
 import { serveLocalLaya } from "./local-laya.ts";
 
 const help = `testing-agent - AI-driven browser tests through agent-browser
@@ -120,7 +120,7 @@ export async function runCli(args: string[]): Promise<number> {
       );
       return 0;
     }
-    await checkBackend(input.backend);
+    await ensureBackend(input.backend);
     state = await startRun(input);
   } else if (command === "resume" || command === "recover") {
     const runId = z.uuid().parse(positional);

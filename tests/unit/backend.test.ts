@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { checkBackend, BackendSetupError } from "../../src/backend.ts";
+import {
+  checkBackend,
+  ensureBackend,
+  BackendSetupError,
+} from "../../src/backend.ts";
 
 test("preflight probes the configured decision endpoint without inference", async () => {
   let cancelled = false;
@@ -99,4 +103,45 @@ test("preflight refuses redirects and does not forward credentials", async () =>
     source.stop(true);
     target.stop(true);
   }
+});
+
+test("an unreachable Laya server is started after the user agrees", async () => {
+  let up = false;
+  let started = 0;
+  await ensureBackend(
+    { provider: "laya" },
+    async () => {
+      if (!up) throw new Error("down");
+      return new Response(null, { status: 405 });
+    },
+    {
+      interactive: true,
+      confirm: async () => true,
+      start: () => {
+        started++;
+        up = true;
+      },
+      wait: async () => undefined,
+    },
+  );
+  expect(started).toBe(1);
+});
+
+test("declining or running non-interactively keeps the setup error", async () => {
+  const down = async () => {
+    throw new Error("down");
+  };
+  for (const prompts of [
+    { interactive: true, confirm: async () => false },
+    { interactive: false, confirm: async () => true },
+  ])
+    await expect(
+      ensureBackend({ provider: "laya" }, down, {
+        ...prompts,
+        start: () => {
+          throw new Error("must not start");
+        },
+        wait: async () => undefined,
+      }),
+    ).rejects.toBeInstanceOf(BackendSetupError);
 });

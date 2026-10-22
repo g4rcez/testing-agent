@@ -54,3 +54,63 @@ export async function checkBackend(
     await response.body?.cancel().catch(() => undefined);
   }
 }
+
+export type BackendPrompts = {
+  interactive: boolean;
+  confirm(question: string): Promise<boolean>;
+  start(): void;
+  wait(ms: number): Promise<void>;
+};
+
+async function askYesNo(question: string): Promise<boolean> {
+  process.stderr.write(`${question} [y/N] `);
+  for await (const line of console) return /^y(es)?$/i.test(line.trim());
+  return false;
+}
+
+function spawnLayaSetup(): void {
+  const child = Bun.spawn(
+    [process.execPath, process.argv[1] ?? "", "setup", "laya"],
+    { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
+  );
+  child.unref();
+}
+
+const defaultPrompts: BackendPrompts = {
+  interactive: Boolean(process.stdin.isTTY && process.stderr.isTTY),
+  confirm: askYesNo,
+  start: spawnLayaSetup,
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+// Checks the backend; for an unreachable local Laya in a terminal, offers to start it.
+export async function ensureBackend(
+  backend: Backend,
+  request?: (url: string, options: RequestInit) => Promise<Response>,
+  prompts: BackendPrompts = defaultPrompts,
+  timeoutMs = 15 * 60_000,
+): Promise<void> {
+  try {
+    return await checkBackend(backend, request);
+  } catch (error) {
+    if (
+      !(error instanceof BackendSetupError) ||
+      backend.provider !== "laya" ||
+      !prompts.interactive ||
+      !(await prompts.confirm(
+        "The Laya server is not running. Set it up now with https://github.com/receptron/laya (first run downloads ~1.7 GB)?",
+      ))
+    )
+      throw error;
+  }
+  prompts.start();
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await prompts.wait(2000);
+    try {
+      return await checkBackend(backend, request);
+    } catch (error) {
+      if (Date.now() > deadline) throw error;
+    }
+  }
+}

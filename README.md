@@ -19,7 +19,7 @@ testing-agent setup laya
 
 This uses [`@receptron/laya`](https://github.com/receptron/laya). The first explicit setup downloads about **1.7 GB** of pinned model weights; allow at least **2 GB RAM**. Wait for `"ready": true` and keep that terminal running. The install command skips unused CUDA downloads; this backend uses the CPU.
 
-Tests check backend reachability before opening a browser. If it is unavailable, the CLI returns setup instructions. It does not install, download, or start a backend automatically. Existing Python Laya and hosted Jev configurations remain supported.
+Tests check backend reachability before opening a browser. If the local Laya server is not running, an interactive terminal asks whether to set it up now (it starts `testing-agent setup laya` only if you answer yes); non-interactive runs return setup instructions and never download or start anything. Existing Python Laya and hosted Jev configurations remain supported.
 
 ## First test
 
