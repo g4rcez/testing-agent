@@ -93,10 +93,36 @@ export function assertOidcEnvironment(
     );
 }
 
-async function command(binary: string, args: string[]): Promise<string> {
+export function npmPublishEnvironment(
+  environment: Record<string, string | undefined>,
+  release?: {
+    version: string;
+    previousTag: string | undefined;
+    registryExists: boolean;
+  },
+): Record<string, string | undefined> {
+  const clean = { ...environment };
+  delete clean.BOOTSTRAP_NPM_TOKEN;
+  delete clean.NODE_AUTH_TOKEN;
+  if (
+    release?.version === "0.0.1" &&
+    !release.previousTag &&
+    !release.registryExists &&
+    environment.BOOTSTRAP_NPM_TOKEN
+  )
+    clean.NODE_AUTH_TOKEN = environment.BOOTSTRAP_NPM_TOKEN;
+  return clean;
+}
+
+async function command(
+  binary: string,
+  args: string[],
+  environment = npmPublishEnvironment(process.env),
+): Promise<string> {
   return (
     await exec(binary, args, {
       encoding: "utf8",
+      env: environment,
       timeout: 180_000,
       maxBuffer: 2_000_000,
     })
@@ -211,14 +237,22 @@ async function release(): Promise<void> {
   const published = registry?.versions[version];
   if (published) assertPublishedArtifact(published, revision, integrity);
   else
-    await command("npm", [
-      "publish",
-      archive,
-      "--access",
-      "public",
-      "--provenance",
-      "--ignore-scripts",
-    ]);
+    await command(
+      "npm",
+      [
+        "publish",
+        archive,
+        "--access",
+        "public",
+        "--provenance",
+        "--ignore-scripts",
+      ],
+      npmPublishEnvironment(process.env, {
+        version,
+        previousTag,
+        registryExists: registry !== undefined,
+      }),
+    );
 
   // A failed GitHub release after a successful npm publish is repairable by
   // rerunning this exact workflow, but only for the identical package bytes.

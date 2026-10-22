@@ -5,6 +5,7 @@ import {
   assertPublishedArtifact,
   pendingRelease,
   assertOidcEnvironment,
+  npmPublishEnvironment,
 } from "../../scripts/release.ts";
 
 test("trusted publishing requires GitHub OIDC, not an npm token", () => {
@@ -20,6 +21,38 @@ test("trusted publishing requires GitHub OIDC, not an npm token", () => {
     { ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-only" },
   ])
     expect(() => assertOidcEnvironment(environment)).toThrow("OIDC");
+});
+
+test("the npm bootstrap secret reaches only the initial unpublished 0.0.1 publish", () => {
+  const environment = {
+    PATH: "/tools",
+    BOOTSTRAP_NPM_TOKEN: "bootstrap-fixture",
+    NODE_AUTH_TOKEN: "unrelated-fixture",
+  };
+  expect(
+    npmPublishEnvironment(environment, {
+      version: "0.0.1",
+      previousTag: undefined,
+      registryExists: false,
+    }),
+  ).toEqual({ PATH: "/tools", NODE_AUTH_TOKEN: "bootstrap-fixture" });
+  for (const release of [
+    undefined,
+    { version: "0.0.1", previousTag: undefined, registryExists: true },
+    { version: "0.0.1", previousTag: "v0.0.1", registryExists: false },
+    { version: "0.0.2", previousTag: "v0.0.1", registryExists: true },
+    { version: "0.1.0", previousTag: undefined, registryExists: false },
+  ])
+    expect(npmPublishEnvironment(environment, release)).toEqual({
+      PATH: "/tools",
+    });
+  expect(environment.BOOTSTRAP_NPM_TOKEN).toBe("bootstrap-fixture");
+  expect(
+    npmPublishEnvironment(
+      { PATH: "/tools" },
+      { version: "0.0.1", previousTag: undefined, registryExists: false },
+    ),
+  ).toEqual({ PATH: "/tools" });
 });
 
 test("first release is always 0.0.1", () => {
@@ -108,6 +141,7 @@ test("CI provisions native recording dependencies on both platforms before verif
     .object({
       jobs: z.object({
         verify: z.object({
+          "timeout-minutes": z.number(),
           steps: z.array(
             z.object({
               name: z.string().optional(),
@@ -119,6 +153,7 @@ test("CI provisions native recording dependencies on both platforms before verif
       }),
     })
     .parse(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text()));
+  expect(workflow.jobs.verify["timeout-minutes"]).toBe(30);
   const steps = workflow.jobs.verify.steps;
   const linux = steps.findIndex(
     (step) => step.name === "Install ffmpeg on Linux",
@@ -183,9 +218,9 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   expect(release.permissions["id-token"]).toBe("write");
   expect(release.concurrency["cancel-in-progress"]).toBe(false);
   const source = await Bun.file(".github/workflows/ci.yml").text();
-  expect(source).not.toContain("NPM_TOKEN");
-  expect(source).not.toContain("NODE_AUTH_TOKEN");
-  expect(await Bun.file("scripts/release.ts").text()).not.toContain(
-    "NODE_AUTH_TOKEN",
+  expect(source).not.toContain("NODE_AUTH_TOKEN:");
+  expect(source).toContain("BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}");
+  expect(source.indexOf("BOOTSTRAP_NPM_TOKEN:")).toBeGreaterThan(
+    source.indexOf("name: Publish npm package and GitHub release"),
   );
 });
