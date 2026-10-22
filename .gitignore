@@ -6,3 +6,4 @@ artifacts/
 dist/
 *.tgz
 __pycache__/
+.omo

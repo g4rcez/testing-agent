@@ -1,0 +1,28 @@
+# Start your compatible stay-search app at this URL before running.
+name: Find Casa Flora
+url: http://localhost:3000
+prompt: >-
+  Find a stay in Lisbon with Design and free cancellation,
+  then open Casa Flora.
+backend:
+  provider: laya
+steps:
+  - instruction: Enter Lisbon in Destination
+    value: Lisbon
+    expect:
+      selector: '[name=destination]'
+      value: Lisbon
+  - instruction: Choose Design in Category
+    expect:
+      selector: '[name=category]'
+      value: Design
+  - instruction: Enable free cancellation
+    expect:
+      selector: '[name=cancellation]'
+      checked: true
+  - instruction: Submit Find stays
+    expect:
+      text: 1 matching stay
+  - Open Casa Flora
+expect:
+  - text: 'Applied filters: Lisbon / Design / cancellation enabled'

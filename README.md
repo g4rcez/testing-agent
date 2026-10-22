@@ -1,6 +1,6 @@
 # agent-browser Jev/Laya tests
 
-Create browser tests from a prompt and ordered instructions. **agent-browser controls the browser; Jev or Laya chooses the next action.** User-authored assertions determine whether a test passes.
+Create browser tests in **YAML or JSON** from a prompt and ordered instructions. **agent-browser controls the browser; Jev or Laya chooses the next action.** User-authored assertions determine whether a test passes.
 
 This is the 0.2.0 release candidate. Supported execution targets are ordinary HTML/ARIA controls and open shadow roots on Chromium. Release evidence and remaining external gates are recorded in [release readiness](docs/RELEASE-READINESS.md).
 
@@ -17,7 +17,117 @@ bunx agent-browser install
 
 The packaged entry points are `jev-test` and `agent-browser-plugin-jev`. Package smoke tests install the tarball into a separate project and exercise both entry points through a real browser. This repository is prepared for publication; registry and repository ownership must be configured before publishing.
 
+## Try `ls` in a visible browser
+
+This example opens [garcez.dev](https://garcez.dev/), types `ls` in its interactive terminal, presses Enter, and checks the complete output listing:
+
+```text
+README.md
+agents.ts
+posts
+projects
+skills.ts
+tags
+```
+
+![Real Laya-driven browser test running ls on garcez.dev and displaying the six expected entries](docs/assets/garcez-ls.gif)
+
+Start the local Laya service in one terminal:
+
+```sh
+uv run tools/laya-server.py
+```
+
+In another terminal, run the example with a visible Chrome window:
+
+```sh
+bun run demo:garcez
+```
+
+The helper waits for the terminal prompt, runs the real CLI, writes JSON/JUnit reports and a screenshot under `artifacts/garcez-ls-SESSION/`, and leaves the browser open for inspection. It prints the session name and a command to close it. The GIF above was recorded from a real successful Laya run; decisions are not scripted.
+
+To run the test definition directly, validate it and enable agent-browser's headed mode:
+
+```sh
+./bin/jev-test validate examples/garcez-ls.yaml
+AGENT_BROWSER_HEADED=true ./bin/jev-test run examples/garcez-ls.yaml \
+  --backend laya --session garcez-ls --report-dir artifacts/garcez-ls
+```
+
+To use Jev with your configured `TYPESAFE_API_KEY`:
+
+```sh
+bun run demo:garcez -- --backend jev
+```
+
+To record a new GIF, install `ffmpeg` on your PATH, then run:
+
+```sh
+bun run demo:garcez -- --record
+```
+
+Recording captures real frames through agent-browser screenshots, saves those frames and a video with the run artifacts, and regenerates `docs/assets/garcez-ls.gif`. This avoids native screencast distortion on headed browsers with an emulated viewport. The assertion checks the contiguous output sequence, so the site's help text mentioning individual filenames cannot pass the test by itself.
+
+## Try GitHub's Star control
+
+Laya opens [this repository](https://github.com/g4rcez/agent-browser-jev), chooses **Star**, and reaches GitHub's sign-in page in a signed-out browser:
+
+![Real Laya decision clicks Star on this repository and reaches GitHub sign-in; no star is added](docs/assets/github-star-sign-in.gif)
+
+With the local Laya service running:
+
+```sh
+bun run demo:github
+bun run demo:github -- --record
+```
+
+This recording uses [`examples/github-star-sign-in.yaml`](examples/github-star-sign-in.yaml). It checks both the exact sign-in URL and the visible username field. **It does not add a star or treat the sign-in page as a successful star.** No credentials are entered or recorded. Real-run receipts are in [GitHub evidence](docs/evidence/github-star-sign-in.json) and [terminal evidence](docs/evidence/garcez-ls.json).
+
+To actually star the repository, open a named browser session, sign in manually, then run the separate authenticated definition:
+
+```sh
+agent-browser --session github-star --headed open https://github.com/g4rcez/agent-browser-jev
+# Sign in manually in that browser before continuing.
+./bin/jev-test run examples/github-star.yaml --session github-star \
+  --report-dir artifacts/github-star
+```
+
+**This changes your GitHub account.** The definition requires a visible **Unstar this repository** button as proof. If that state is already present, the step assertion advances without clicking it. It does not intentionally toggle the star off. This authenticated variant is schema-validated but has not been live-verified; it needs a signed-in browser and GitHub's current markup. Use a test account and inspect the result. Close the session when finished with `agent-browser --session github-star close`.
+
 ## Write a test
+
+YAML (`.yaml` or `.yml`, case-insensitive) and JSON use the same fields, validation, CLI overrides, limits, and reports. Files with other extensions retain JSON parsing. YAML uses Bun's built-in parser; no YAML package is required. Quote strings such as `"true"` or `"123"` when you need text rather than YAML booleans or numbers. YAML is data only: it does not interpolate environment variables; use `valueFromEnv` for secret field values.
+
+```yaml
+name: Find Casa Flora
+url: http://localhost:3000
+prompt: Find a stay in Lisbon with Design and free cancellation, then open Casa Flora.
+backend:
+  provider: laya
+steps:
+  - instruction: Enter Lisbon in Destination
+    value: Lisbon
+    expect:
+      selector: '[name=destination]'
+      value: Lisbon
+  - instruction: Choose Design in Category
+    expect:
+      selector: '[name=category]'
+      value: Design
+  - instruction: Enable free cancellation
+    expect:
+      selector: '[name=cancellation]'
+      checked: true
+  - instruction: Submit Find stays
+    expect:
+      text: 1 matching stay
+  - Open Casa Flora
+expect:
+  - text: 'Applied filters: Lisbon / Design / cancellation enabled'
+```
+
+<details>
+<summary>JSON format is still supported</summary>
 
 ```json
 {
@@ -51,12 +161,23 @@ The packaged entry points are `jev-test` and `agent-browser-plugin-jev`. Package
 }
 ```
 
-Use your app's URL, controls, and expected outcomes. Save the definition as `stay.test.json`, then run:
+</details>
+
+Use your app's URL, controls, and expected outcomes. Save the definition as `stay.test.yaml` (or `.yml` / `.json`), then run:
 
 ```sh
-./bin/jev-test validate stay.test.json
-./bin/jev-test run stay.test.json --report-dir artifacts/results
+./bin/jev-test validate stay.test.yaml
+./bin/jev-test run stay.test.yaml --report-dir artifacts/results
 ```
+
+### Example definitions
+
+| Workflow | Definition | Prerequisite / result |
+| --- | --- | --- |
+| Terminal command | [YAML](examples/garcez-ls.yaml) · [JSON](examples/garcez-ls.json) | Public garcez.dev; checks all six `ls` entries in order |
+| GitHub Star sign-in gate | [YAML](examples/github-star-sign-in.yaml) | Signed-out browser; checks sign-in, not a star |
+| GitHub star | [YAML](examples/github-star.yaml) | Manually signed-in session; changes account state; not live-verified |
+| Form, select, checkbox, details | [YAML](examples/stay-search.yaml) · [JSON](examples/stay-search.json) | Your compatible local stay-search app at port 3000 |
 
 The CLI automatically continues paused calls. It emits JSON and JUnit reports and returns exit code **0 only for a passed test**, 1 for failed/blocked/uncertain, 2 for invalid input, and 130 for cancellation. Total-test time includes browser startup, inference, input, and assertions.
 
@@ -132,6 +253,8 @@ bun run test:live -- --backend jev --repeats 3
 Checks cover types, builds, real Chromium controls, stale targets, overlays, secret-field binding, process-kill recovery, cancellation, deadlines, reports, and installation outside the repository. Scripted provider fixtures validate the protocol; only live runs measure model-driven outcomes. See [release instructions](docs/RELEASE.md) and [security boundaries](SECURITY.md).
 
 The guarded DOM adapter runs through agent-browser's eval API and dispatches synthetic DOM events. It supports standard forms, common HTML/ARIA controls, navigation, scrolling, and open shadow roots. Widgets requiring trusted hardware events, frames, closed shadow roots, canvas input, uploads/downloads, and pop-up tabs are outside this release's execution contract. agent-browser remains the sole browser controller; no separate CDP or Playwright connection is used.
+
+DOM terminals are supported when a visible `role="group"` with `aria-roledescription="terminal"` contains one labeled textarea. The visible terminal and its textarea identity are guarded together; text input and Enter are delivered to that bound textarea. Canvas-only terminals and widgets requiring trusted keyboard events remain outside this contract.
 
 The page shares JavaScript globals with the adapter. Identity guards prevent accidental stale-node redirection; they are not a hostile-page sandbox. Use isolated sessions and apps you control. State files contain the test definition; reports omit typed values and API keys. See [SECURITY.md](SECURITY.md) before sharing artifacts.
 

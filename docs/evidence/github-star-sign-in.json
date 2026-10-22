@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-22",
+  "url": "https://github.com/g4rcez/agent-browser-jev",
+  "definition": "examples/github-star-sign-in.yaml",
+  "capture": "Real agent-browser screenshots of a source CLI run consuming YAML, encoded into docs/assets/github-star-sign-in.gif. No scripted model decisions or credentials.",
+  "outcome": "Signed-out Star click reaches GitHub sign-in. No star was added. The authenticated github-star.yaml variant has not been live-verified.",
+  "expectedUrl": "https://github.com/login?return_to=%2Fg4rcez%2Fagent-browser-jev",
+  "expectedSelector": "input#login_field",
+  "runId": "07d83f25-2ad9-43e6-bb13-fbaa1abcc1c9",
+  "session": "github-star-sign-in-a09427bd",
+  "name": "GitHub Star requires sign-in",
+  "status": "completed",
+  "currentStep": null,
+  "totalSteps": 1,
+  "completedSteps": [
+    {
+      "instruction": "Click Star near the repository name to open the GitHub sign-in page",
+      "verification": "assertion"
+    }
+  ],
+  "actions": [
+    {
+      "stepIndex": 0,
+      "operation": "CLICK",
+      "target": "Star0 (0)",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.8692,
+      "elapsedMs": 805,
+      "inferenceMs": 644,
+      "executeMs": 45
+    }
+  ],
+  "assertions": [{ "passed": true, "index": 0, "message": "Assertion passed" }],
+  "reason": null,
+  "elapsedMs": 1242,
+  "resume": null
+}

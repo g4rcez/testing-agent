@@ -55,6 +55,43 @@ test("observes native options and checkbox states without treating select as tex
   ).toBe("Lisbon");
 });
 
+test("types and presses Enter through an accessible DOM terminal without redirecting replaced input", async () => {
+  await browser.command([
+    "eval",
+    '(() => { document.body.innerHTML=`<div role="group" aria-roledescription="terminal" aria-label="Command terminal" style="position:relative;width:600px;height:300px"><div id="output">Ready</div><textarea aria-label="Command terminal" style="opacity:0;pointer-events:none;position:absolute;width:1px;height:1px"></textarea></div>`; const input=document.querySelector("textarea"); let command=""; input.addEventListener("input",()=>{command+=input.value;input.value="";document.querySelector("#output").textContent=command;}); input.addEventListener("keydown",event=>{if(event.key==="Enter")document.querySelector("#output").textContent=command==="ls"?"README.md agents.ts posts projects skills.ts tags":"Wrong command";}); })()',
+  ]);
+  let observed = await browser.observe();
+  await browser.execute(
+    choice(observed, "TYPE_TEXT", "Command terminal"),
+    "ls",
+  );
+  observed = await browser.observe();
+  const submit = choice(observed, "PRESS_ENTER", "Command terminal");
+  await browser.execute(submit);
+  expect(
+    (
+      await browser.assert([
+        {
+          text: "README.md agents.ts posts projects skills.ts tags",
+          timeoutMs: 0,
+        },
+      ])
+    ).passed,
+  ).toBe(true);
+  const stale = choice(
+    await browser.observe(),
+    "TYPE_TEXT",
+    "Command terminal",
+  );
+  await browser.command([
+    "eval",
+    '(() => { const input=document.querySelector("textarea"); input.replaceWith(input.cloneNode(true)); })()',
+  ]);
+  await expect(browser.execute(stale, "unexpected")).rejects.toBeInstanceOf(
+    StaleDecisionError,
+  );
+});
+
 test("rejects a same-label replacement node at dispatch", async () => {
   const observed = await browser.observe();
   const selected = choice(observed, "CLICK", "Find stays");

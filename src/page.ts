@@ -67,6 +67,24 @@ export function pageBridge(request: PageRequest): unknown {
   const disabled = (node: HTMLElement) =>
     node.matches(":disabled") ||
     Boolean(node.closest('[aria-disabled="true"],[inert]'));
+  const terminalInput = (
+    node: HTMLElement,
+  ): HTMLTextAreaElement | undefined => {
+    if (!node.matches('[role="group"][aria-roledescription="terminal"]'))
+      return;
+    const inputs = node.querySelectorAll("textarea[aria-label]");
+    const input = inputs[0];
+    if (
+      inputs.length === 1 &&
+      input instanceof HTMLTextAreaElement &&
+      !input.closest(
+        '[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]',
+      ) &&
+      !input.disabled &&
+      !input.readOnly
+    )
+      return input;
+  };
   const name = (node: HTMLElement): string => {
     const root = node.getRootNode();
     const references = (node.getAttribute("aria-labelledby") ?? "")
@@ -100,7 +118,7 @@ export function pageBridge(request: PageRequest): unknown {
       .slice(0, 300);
   };
   const role = (node: HTMLElement): string =>
-    node.getAttribute("role") ||
+    (terminalInput(node) ? "textbox" : node.getAttribute("role")) ||
     (node instanceof HTMLSelectElement
       ? "combobox"
       : node instanceof HTMLTextAreaElement || node.isContentEditable
@@ -123,9 +141,8 @@ export function pageBridge(request: PageRequest): unknown {
     node instanceof HTMLTextAreaElement ||
     node instanceof HTMLSelectElement
       ? node.value
-      : node.isContentEditable
-        ? (node.textContent ?? "")
-        : "";
+      : (terminalInput(node)?.value ??
+        (node.isContentEditable ? (node.textContent ?? "") : ""));
   const publicValue = (node: HTMLElement) =>
     node instanceof HTMLInputElement && node.type === "password"
       ? "<redacted>"
@@ -157,6 +174,12 @@ export function pageBridge(request: PageRequest): unknown {
           disabled(node),
         ]),
     ]);
+  const terminalState = (node: HTMLElement) => {
+    const input = terminalInput(node);
+    return input
+      ? [id(input), node.innerText.replace(/\s+/g, " ").slice(-12000)]
+      : null;
+  };
   const guard = (node: HTMLElement) =>
     JSON.stringify([
       id(node),
@@ -170,6 +193,7 @@ export function pageBridge(request: PageRequest): unknown {
       node.getAttribute("aria-readonly"),
       "readOnly" in node ? node.readOnly : null,
       disabled(node),
+      terminalState(node),
       node instanceof HTMLSelectElement
         ? Array.from(node.options).map((option) => [
             id(option),
@@ -307,20 +331,25 @@ export function pageBridge(request: PageRequest): unknown {
             HTMLElement.prototype.click.call(node);
           break;
         case "TYPE_TEXT": {
+          const terminal = node ? terminalInput(node) : undefined;
+          const field = terminal ?? node;
           if (
-            !node ||
+            !field ||
             request.text === undefined ||
-            ((node instanceof HTMLInputElement ||
-              node instanceof HTMLTextAreaElement) &&
-              node.readOnly)
+            ((field instanceof HTMLInputElement ||
+              field instanceof HTMLTextAreaElement) &&
+              field.readOnly)
           )
             throw new Error("Unsupported field");
+          if (terminal) field.focus({ preventScroll: true });
+          if (!field.isConnected)
+            throw new Error("Field detached during focus");
           if (
-            node instanceof HTMLInputElement ||
-            node instanceof HTMLTextAreaElement
+            field instanceof HTMLInputElement ||
+            field instanceof HTMLTextAreaElement
           ) {
             const prototype =
-              node instanceof HTMLInputElement
+              field instanceof HTMLInputElement
                 ? HTMLInputElement.prototype
                 : HTMLTextAreaElement.prototype;
             const setter = Object.getOwnPropertyDescriptor(
@@ -328,10 +357,10 @@ export function pageBridge(request: PageRequest): unknown {
               "value",
             )?.set;
             if (!setter) throw new Error("Unsupported setter");
-            setter.call(node, request.text);
-          } else if (node.isContentEditable) node.textContent = request.text;
+            setter.call(field, request.text);
+          } else if (field.isContentEditable) field.textContent = request.text;
           else throw new Error("Unsupported field");
-          node.dispatchEvent(
+          field.dispatchEvent(
             new InputEvent("input", {
               bubbles: true,
               composed: true,
@@ -339,7 +368,7 @@ export function pageBridge(request: PageRequest): unknown {
               data: request.text,
             }),
           );
-          node.dispatchEvent(
+          field.dispatchEvent(
             new Event("change", { bubbles: true, composed: true }),
           );
           break;
@@ -360,6 +389,25 @@ export function pageBridge(request: PageRequest): unknown {
           );
           break;
         case "PRESS_ENTER": {
+          const input = node ? terminalInput(node) : undefined;
+          if (input) {
+            input.focus({ preventScroll: true });
+            if (!input.isConnected)
+              throw new Error("Terminal input detached during focus");
+            for (const type of ["keydown", "keyup"])
+              input.dispatchEvent(
+                new KeyboardEvent(type, {
+                  key: "Enter",
+                  code: "Enter",
+                  keyCode: 13,
+                  which: 13,
+                  bubbles: true,
+                  composed: true,
+                  cancelable: true,
+                }),
+              );
+            break;
+          }
           const form = node?.closest("form");
           if (!(form instanceof HTMLFormElement))
             throw new Error("No observed form");
@@ -477,6 +525,7 @@ export function pageBridge(request: PageRequest): unknown {
       operations.push("CLICK");
     } else {
       const editable =
+        Boolean(terminalInput(node)) ||
         node instanceof HTMLTextAreaElement ||
         node.isContentEditable ||
         (node instanceof HTMLInputElement &&
@@ -513,7 +562,7 @@ export function pageBridge(request: PageRequest): unknown {
         add("CLICK", nodeId, node, candidate);
         operations.push("CLICK");
       }
-      if (editable && node.closest("form")) {
+      if (editable && (node.closest("form") || terminalInput(node))) {
         add("PRESS_ENTER", nodeId, node, candidate);
         operations.push("PRESS_ENTER");
       }

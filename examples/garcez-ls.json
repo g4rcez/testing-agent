@@ -1,0 +1,20 @@
+{
+  "name": "garcez.dev terminal lists the home directory",
+  "url": "https://garcez.dev/",
+  "prompt": "Use the interactive terminal on garcez.dev to run ls from the home directory. Verify the output lists README.md, agents.ts, posts, projects, skills.ts, and tags in that order.",
+  "backend": { "provider": "laya" },
+  "steps": [
+    {
+      "instruction": "Type ls into the Interactive garcez.dev terminal",
+      "value": "ls",
+      "expect": { "text": "[~]>_ ls", "timeoutMs": 5000 }
+    },
+    "Press Enter in the Interactive garcez.dev terminal to execute ls"
+  ],
+  "expect": [
+    {
+      "text": "README.md agents.ts posts projects skills.ts tags",
+      "timeoutMs": 10000
+    }
+  ]
+}

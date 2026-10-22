@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- Accept `.yaml` and `.yml` CLI test definitions with the same validation and limits as JSON, using Bun's built-in YAML parser.
+- Add YAML terminal/form examples and separate GitHub Star sign-in and authenticated examples, with real Laya GIFs for the terminal and signed-out GitHub workflows.
+- Add a visible garcez.dev `ls` CLI demo, real-browser GIF recording, and guarded DOM terminal text/Enter support.
 - Add a CLI for JSON test definitions, automatic continuation, JSON/JUnit reports, validation, and JSON Schema output.
 - Require deterministic final assertions; model DONE alone cannot pass a test.
 - Bind decisions to observed DOM nodes and reject changed, detached, hidden, disabled, or covered targets.

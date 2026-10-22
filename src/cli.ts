@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { extname, resolve } from "node:path";
 import { z } from "zod";
 import { runSchema } from "./contracts.ts";
 import {
@@ -15,8 +15,8 @@ import { writeReports } from "./report.ts";
 const help = `jev-test - AI-driven browser tests through agent-browser
 
 Usage:
-  jev-test run <test.json> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
-  jev-test validate <test.json>
+  jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
+  jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
   jev-test schema
   jev-test --help
@@ -30,11 +30,14 @@ are written for terminal results. Exit codes: 0 passed, 1 failed/blocked/uncerta
 async function readTest(path: string) {
   const file = Bun.file(path);
   if (file.size > 1_000_000) throw new Error("Test definition exceeds 1 MB");
+  const yaml = [".yaml", ".yml"].includes(extname(path).toLowerCase());
   let value: unknown;
   try {
-    value = await file.json();
+    value = yaml ? Bun.YAML.parse(await file.text()) : await file.json();
   } catch {
-    throw new Error("Cannot read a valid JSON test definition");
+    throw new Error(
+      `Cannot read a valid ${yaml ? "YAML" : "JSON"} test definition`,
+    );
   }
   return z.record(z.string(), z.unknown()).parse(value);
 }

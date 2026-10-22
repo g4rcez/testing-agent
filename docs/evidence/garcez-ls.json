@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-22",
+  "url": "https://garcez.dev/",
+  "definition": "examples/garcez-ls.yaml",
+  "capture": "Real agent-browser screenshots of a source CLI run consuming YAML; encoded into docs/assets/garcez-ls.gif. No scripted model decisions.",
+  "expectedItems": [
+    "README.md",
+    "agents.ts",
+    "posts",
+    "projects",
+    "skills.ts",
+    "tags"
+  ],
+  "runId": "25512e71-3598-4b71-bd1d-a9bd6626f3c5",
+  "session": "garcez-ls-72099e06",
+  "name": "garcez.dev terminal lists the home directory",
+  "status": "completed",
+  "currentStep": null,
+  "totalSteps": 2,
+  "completedSteps": [
+    {
+      "instruction": "Type ls into the Interactive garcez.dev terminal",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Press Enter in the Interactive garcez.dev terminal to execute ls",
+      "verification": "model"
+    }
+  ],
+  "actions": [
+    {
+      "stepIndex": 0,
+      "operation": "TYPE_TEXT",
+      "target": "Interactive garcez.dev terminal",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.1365,
+      "elapsedMs": 814,
+      "inferenceMs": 701,
+      "executeMs": 35
+    },
+    {
+      "stepIndex": 1,
+      "operation": "PRESS_ENTER",
+      "target": "Interactive garcez.dev terminal",
+      "model": "cklxx/laya-browser@645cf366a2ae35f1086e8c20eff48f909bb49206",
+      "confidence": 0.4322,
+      "elapsedMs": 1806,
+      "inferenceMs": 330,
+      "executeMs": 55
+    }
+  ],
+  "assertions": [{ "passed": true, "index": 0, "message": "Assertion passed" }],
+  "reason": null,
+  "elapsedMs": 2294,
+  "resume": null
+}
