@@ -23,6 +23,16 @@ This uses [`@receptron/laya`](https://github.com/receptron/laya). The first expl
 
 Tests check backend reachability before opening a browser. If the local Laya server is not running, an interactive terminal asks whether to set it up now (it starts `testing-agent setup laya` only if you answer yes); non-interactive runs return setup instructions and never download or start anything. Existing Python Laya and hosted Jev configurations remain supported.
 
+## Start a project
+
+```sh
+testing-agent init          # asks which folder to use (default: tests)
+testing-agent init e2e      # uses the e2e folder
+testing-agent init --json   # JSON example instead of the default YAML (--yaml is explicit)
+```
+
+This creates the folder with an `example.test.yaml` (or `.json`) you can run right away. Existing files are never overwritten.
+
 ## First test
 
 Save this as **`blog.test.yaml`**. It defines three ordered steps and checks both the URL and page text after each one. No selectors are needed.
