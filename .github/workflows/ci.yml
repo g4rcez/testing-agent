@@ -67,4 +67,3 @@ jobs:
         run: bun run scripts/release.ts
         env:
           GH_TOKEN: ${{ github.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

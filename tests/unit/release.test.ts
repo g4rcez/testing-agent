@@ -4,7 +4,23 @@ import {
   nextVersion,
   assertPublishedArtifact,
   pendingRelease,
+  assertOidcEnvironment,
 } from "../../scripts/release.ts";
+
+test("trusted publishing requires GitHub OIDC, not an npm token", () => {
+  expect(() =>
+    assertOidcEnvironment({
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-only",
+    }),
+  ).not.toThrow();
+  for (const environment of [
+    {},
+    { ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc" },
+    { ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-only" },
+  ])
+    expect(() => assertOidcEnvironment(environment)).toThrow("OIDC");
+});
 
 test("first release is always 0.0.1", () => {
   expect(nextVersion(undefined, ["feat!: Initial implementation"])).toBe(
@@ -126,4 +142,10 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   expect(release.permissions.contents).toBe("write");
   expect(release.permissions["id-token"]).toBe("write");
   expect(release.concurrency["cancel-in-progress"]).toBe(false);
+  const source = await Bun.file(".github/workflows/ci.yml").text();
+  expect(source).not.toContain("NPM_TOKEN");
+  expect(source).not.toContain("NODE_AUTH_TOKEN");
+  expect(await Bun.file("scripts/release.ts").text()).not.toContain(
+    "NODE_AUTH_TOKEN",
+  );
 });

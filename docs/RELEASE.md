@@ -12,17 +12,23 @@
 
 ## Publishing access
 
-For the first publication, a maintainer must configure a granular npm token with permission to publish `agent-tester` and bypass 2FA for automation. Set it as the repository secret `NPM_TOKEN`, without placing it in a file or chat:
+Use [npm trusted publishing](https://docs.npmjs.com/trusted-publishers), not a stored npm publishing token. The release job uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`. npm automatically exchanges the workflow's OIDC identity for short-lived publishing access. npm requires Node 22.14.0+ and npm 11.5.1+. GitHub release access separately uses the job-scoped GitHub token with `contents: write`.
 
-```sh
-gh secret set NPM_TOKEN --repo g4rcez/agent-browser-jev
-```
+In the npm package settings, add this GitHub Actions trusted publisher:
 
-The release job supplies this secret only to npm's `NODE_AUTH_TOKEN`. GitHub release access uses the job-scoped GitHub token with `contents: write`; npm provenance uses `id-token: write`.
+| Field | Value |
+| --- | --- |
+| Organization or user | `g4rcez` |
+| Repository | `agent-browser-jev` |
+| Workflow filename | `ci.yml` (not `.github/workflows/ci.yml`) |
+| Environment name | Leave blank |
+| Allowed actions | Enable direct `npm publish` |
 
-After the package exists, prefer npm trusted publishing. In the npm package's settings, add a GitHub Actions trusted publisher for user `g4rcez`, repository `agent-browser-jev`, workflow **`ci.yml`**, with direct `npm publish` allowed. No GitHub environment is configured. Complete a successful publish within npm's trust configuration expiry period. After verifying OIDC publication, remove `NPM_TOKEN` and restrict traditional token publishing. Node 24 supplies the npm CLI needed for trusted publishing. See [npm's trusted publisher documentation](https://docs.npmjs.com/trusted-publishers).
+The npm-side trust is an account setup step; the workflow cannot create that trust for itself. The linked documentation configures it through package settings and does not describe creating a brand-new package through OIDC. If settings are unavailable because `agent-tester` has not yet been created, resolve that bootstrap through npm's supported account setup before attempting release. Do not publish a placeholder or skip CI to reserve the name.
 
-The workflow fails closed when publishing authentication is unavailable. Never create a successful GitHub release to conceal a failed npm publication.
+Complete a successful trusted publish within two days of creating the trust configuration. After confirming it works, npm recommends requiring 2FA and disallowing traditional token publishing. This workflow supplies no npm token and checks that GitHub OIDC is available before publication. Successful npm authorization still depends on the npm-side configuration.
+
+Provenance is automatic for trusted publication from this public repository to a public package; the explicit `--provenance` flag keeps that requirement visible. Never create a successful GitHub release to conceal a failed npm publication.
 
 ## Checks and evidence
 

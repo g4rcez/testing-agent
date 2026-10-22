@@ -81,6 +81,18 @@ export function pendingRelease(
   return latest;
 }
 
+export function assertOidcEnvironment(
+  environment: Record<string, string | undefined>,
+): void {
+  if (
+    !environment.ACTIONS_ID_TOKEN_REQUEST_URL ||
+    !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+  )
+    throw new Error(
+      "GitHub OIDC is unavailable; grant id-token: write and configure the npm trusted publisher for ci.yml",
+    );
+}
+
 async function command(binary: string, args: string[]): Promise<string> {
   return (
     await exec(binary, args, {
@@ -102,6 +114,7 @@ async function release(): Promise<void> {
     throw new Error(
       "Publishing is allowed only from this repository's green main-branch GitHub workflow",
     );
+  assertOidcEnvironment(process.env);
   const revision = z
     .string()
     .regex(/^[a-f0-9]{40}$/)
@@ -173,10 +186,6 @@ async function release(): Promise<void> {
     return;
   }
   const tag = `v${version}`;
-  if (!registry && !process.env.NODE_AUTH_TOKEN)
-    throw new Error(
-      "First publication requires the NPM_TOKEN repository secret; configure it and rerun the failed release job",
-    );
   const manifest = await Bun.file("package.json").json();
   if (manifest.name !== "agent-tester")
     throw new Error("Unexpected package name");
