@@ -1,0 +1,2 @@
+The Laya server is not running. Set it up now with https://github.com/receptron/laya (first run downloads ~1.7 GB)? [y/N] n
+{"error":"laya backend is not reachable; no browser was started","setup":"Start the optional local backend with: testing-agent setup laya. Or start the existing Python service with: uv run tools/laya-server.py. Setup: https://github.com/receptron/laya. Then retry the test."}
