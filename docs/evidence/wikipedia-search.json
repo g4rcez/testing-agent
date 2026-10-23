@@ -8,7 +8,7 @@
       "instruction": "Type Large language model into the Search Wikipedia box",
       "status": "passed",
       "success": true,
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "step": 2,
@@ -22,7 +22,7 @@
       "instruction": "Type IPv4 into the Search Wikipedia box",
       "status": "passed",
       "success": true,
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "step": 4,
@@ -36,7 +36,7 @@
       "instruction": "Type IPv6 into the Search Wikipedia box",
       "status": "passed",
       "success": true,
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "step": 6,
@@ -50,7 +50,7 @@
       "instruction": "Type Spider-Man into the Search Wikipedia box",
       "status": "passed",
       "success": true,
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "step": 8,
@@ -65,7 +65,7 @@
   "completedSteps": [
     {
       "instruction": "Type Large language model into the Search Wikipedia box",
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "instruction": "Press Enter in the Search Wikipedia box to search",
@@ -73,7 +73,7 @@
     },
     {
       "instruction": "Type IPv4 into the Search Wikipedia box",
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "instruction": "Press Enter in the Search Wikipedia box to search",
@@ -81,7 +81,7 @@
     },
     {
       "instruction": "Type IPv6 into the Search Wikipedia box",
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "instruction": "Press Enter in the Search Wikipedia box to search",
@@ -89,7 +89,7 @@
     },
     {
       "instruction": "Type Spider-Man into the Search Wikipedia box",
-      "verification": "assertion"
+      "verification": "field"
     },
     {
       "instruction": "Press Enter in the Search Wikipedia box to search",
@@ -102,10 +102,10 @@
       "operation": "TYPE_TEXT",
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
-      "confidence": 0.0884,
-      "elapsedMs": 5335,
-      "inferenceMs": 4014,
-      "executeMs": 185
+      "confidence": 0.0905,
+      "elapsedMs": 8081,
+      "inferenceMs": 5277,
+      "executeMs": 200
     },
     {
       "stepIndex": 1,
@@ -113,19 +113,19 @@
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
       "confidence": 0.0475,
-      "elapsedMs": 9295,
-      "inferenceMs": 2829,
-      "executeMs": 366
+      "elapsedMs": 14853,
+      "inferenceMs": 5627,
+      "executeMs": 512
     },
     {
       "stepIndex": 2,
       "operation": "TYPE_TEXT",
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
-      "confidence": 0.0931,
-      "elapsedMs": 14380,
-      "inferenceMs": 3961,
-      "executeMs": 154
+      "confidence": 0.0987,
+      "elapsedMs": 20218,
+      "inferenceMs": 4230,
+      "executeMs": 222
     },
     {
       "stepIndex": 3,
@@ -133,19 +133,19 @@
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
       "confidence": 0.0815,
-      "elapsedMs": 18365,
-      "inferenceMs": 2910,
-      "executeMs": 157
+      "elapsedMs": 23545,
+      "inferenceMs": 2641,
+      "executeMs": 160
     },
     {
       "stepIndex": 4,
       "operation": "TYPE_TEXT",
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
-      "confidence": 0.2917,
-      "elapsedMs": 23135,
-      "inferenceMs": 3358,
-      "executeMs": 200
+      "confidence": 0.1915,
+      "elapsedMs": 28097,
+      "inferenceMs": 3275,
+      "executeMs": 155
     },
     {
       "stepIndex": 5,
@@ -153,19 +153,19 @@
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
       "confidence": 0.0635,
-      "elapsedMs": 26648,
-      "inferenceMs": 2534,
-      "executeMs": 161
+      "elapsedMs": 31183,
+      "inferenceMs": 2357,
+      "executeMs": 205
     },
     {
       "stepIndex": 6,
       "operation": "TYPE_TEXT",
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
-      "confidence": 0.2255,
-      "elapsedMs": 32071,
-      "inferenceMs": 3494,
-      "executeMs": 148
+      "confidence": 0.1837,
+      "elapsedMs": 36221,
+      "inferenceMs": 3313,
+      "executeMs": 175
     },
     {
       "stepIndex": 7,
@@ -173,9 +173,9 @@
       "target": "Search Wikipedia",
       "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
       "confidence": 0.0562,
-      "elapsedMs": 35561,
-      "inferenceMs": 2531,
-      "executeMs": 154
+      "elapsedMs": 40087,
+      "inferenceMs": 3184,
+      "executeMs": 165
     }
   ],
   "assertions": [
@@ -186,6 +186,6 @@
     }
   ],
   "reason": null,
-  "elapsedMs": 37723,
+  "elapsedMs": 42090,
   "resume": null
 }

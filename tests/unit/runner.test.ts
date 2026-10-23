@@ -511,3 +511,48 @@ for (const kind of ["call", "total"] as const) {
     );
   }, 5000);
 }
+
+test("a typing step with a value completes once the field holds it, without a selector", async () => {
+  let typed = false;
+  const decisions: string[] = [];
+  const dependencies: RunnerDependencies = {
+    browser: () => ({
+      command: async () => ({}),
+      observe: async () => ({
+        ...observed(typed ? "typed" : "empty"),
+        elements: [
+          {
+            index: "e1",
+            label: "Search",
+            role: "searchbox",
+            value: typed ? "IPv6" : "",
+            operations: ["TYPE_TEXT"],
+          },
+        ],
+      }),
+      execute: async () => {
+        typed = true;
+      },
+    }),
+    decide: async () => {
+      decisions.push("TYPE_TEXT");
+      return decision("TYPE_TEXT");
+    },
+    fieldValue: async () => "IPv6",
+  };
+  const state = await startRun(
+    runSchema.parse({
+      prompt: "Search",
+      steps: [{ instruction: "Type IPv6 into the search box", value: "IPv6" }],
+      backend: { provider: "laya" },
+      session: "unit",
+      expect: [{ text: "App", timeoutMs: 0 }],
+    }),
+    dependencies,
+  );
+  expect(decisions).toEqual(["TYPE_TEXT"]);
+  expect(state.completedSteps).toEqual([
+    { instruction: "Type IPv6 into the search box", verification: "field" },
+  ]);
+  expect(state.status).toBe("completed");
+});

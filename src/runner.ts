@@ -80,7 +80,7 @@ const stateSchema = z.object({
   completedSteps: z.array(
     z.object({
       instruction: z.string(),
-      verification: z.enum(["model", "assertion"]),
+      verification: z.enum(["model", "assertion", "field"]),
     }),
   ),
   pendingAction: z
@@ -589,6 +589,28 @@ async function executeRun(
         await saveRun(state);
         executed++;
         const after = await browser.observe();
+        // A step whose only job is to type its value is done once the field holds it.
+        if (
+          decision.operation === "TYPE_TEXT" &&
+          !step.expect &&
+          text !== undefined &&
+          after.elements.some(
+            (element) =>
+              element.operations.includes("TYPE_TEXT") &&
+              element.value === text,
+          )
+        ) {
+          state.completedSteps.push({
+            instruction: step.instruction,
+            verification: "field",
+          });
+          state.stepIndex++;
+          state.stepDecisions = 0;
+          state.unchangedActions = 0;
+          state.staleDecisions = 0;
+          await saveRun(state);
+          continue;
+        }
         state.unchangedActions =
           after.fingerprint === observed.fingerprint
             ? state.unchangedActions + 1

@@ -247,7 +247,8 @@ for (const provider of ["jev", "laya"] as const) {
         "CLICK",
         "CLICK",
       ]);
-      expect(visitedSteps).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5]);
+      // Step 1 types its value and completes without a separate DONE decision.
+      expect(visitedSteps).toEqual([1, 2, 2, 3, 3, 4, 4, 5]);
       expect(auth.every((value) => value === "Bearer test-only")).toBe(true);
       expect(textRequests).toBe(provider === "laya" ? 1 : 0);
       const final = z

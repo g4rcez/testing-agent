@@ -12,7 +12,6 @@ const example = {
     {
       instruction: "Type IPv6 into the Search Wikipedia box",
       value: "IPv6",
-      expect: { selector: "#searchInput", value: "IPv6" },
     },
     {
       instruction: "Press Enter in the Search Wikipedia box to search",
@@ -24,6 +23,8 @@ const example = {
   ],
 };
 
+const expectation = example.steps[1]!.expect!;
+
 const exampleYaml = `name: ${example.name}
 url: ${example.url}
 prompt: ${example.prompt}
@@ -32,13 +33,10 @@ backend:
 steps:
   - instruction: ${example.steps[0]!.instruction}
     value: IPv6
-    expect:
-      selector: '#searchInput'
-      value: IPv6
   - instruction: ${example.steps[1]!.instruction}
     expect:
-      url: ${example.steps[1]!.expect.url}
-      text: ${example.steps[1]!.expect.text}
+      url: ${expectation.url}
+      text: ${expectation.text}
 `;
 
 export function exampleTest(format: InitFormat): string {

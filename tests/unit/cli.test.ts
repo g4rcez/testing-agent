@@ -82,8 +82,8 @@ describe("CLI test definitions", () => {
     expect(Bun.YAML.parse(snippet!)).toEqual(example);
     const input = runSchema.parse(example);
     expect(input.steps).toHaveLength(8);
-    expect(input.steps.every((step) => step.expect)).toBe(true);
-    expect(input.steps.some((step) => step.selector)).toBe(false);
+    expect(input.steps.filter((step) => step.expect)).toHaveLength(4);
+    expect(JSON.stringify(input)).not.toContain("selector");
     expect(firstTest).toContain("testing-agent test wikipedia-search.yaml");
   });
 

@@ -51,7 +51,7 @@ This creates the folder with an `example.test.yaml` (or `.json`) you can run rig
 
 ## First test
 
-Save this as **`wikipedia-search.yaml`**. One flow searches Wikipedia for four topics (a large language model, IPv4, IPv6 and Spider-Man) and checks, after every step, what the page shows. Each step is plain language; the model picks the control, so no step binds a selector.
+Save this as **`wikipedia-search.yaml`**. One flow searches Wikipedia for four topics (a large language model, IPv4, IPv6 and Spider-Man) and checks the article after every search. Steps are plain-language prompts only: no selectors, and the model picks every control.
 
 ```yaml
 name: Search Wikipedia for LLMs, IPv4, IPv6 and Spider-Man
@@ -62,36 +62,24 @@ backend:
 steps:
   - instruction: Type Large language model into the Search Wikipedia box
     value: Large language model
-    expect:
-      selector: "#searchInput"
-      value: Large language model
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Large_language_model
       text: Large language model
   - instruction: Type IPv4 into the Search Wikipedia box
     value: IPv4
-    expect:
-      selector: "#searchInput"
-      value: IPv4
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv4
       text: Internet Protocol version 4
   - instruction: Type IPv6 into the Search Wikipedia box
     value: IPv6
-    expect:
-      selector: "#searchInput"
-      value: IPv6
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv6
       text: Internet Protocol version 6
   - instruction: Type Spider-Man into the Search Wikipedia box
     value: Spider-Man
-    expect:
-      selector: "#searchInput"
-      value: Spider-Man
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Spider-Man
@@ -106,24 +94,26 @@ testing-agent test wikipedia-search.yaml
 
 The CLI prints JSON with each step's `status` and `success`, the final `passed` result, and the video/report paths. A passing test exits with code `0`. Video recording is enabled by default. The same file ships as [examples/wikipedia-search.yaml](examples/wikipedia-search.yaml).
 
+A step with a `value` is complete once the field holds that value; a step with `expect` is complete only when its URL and page-text assertions hold.
+
 ## Recorded passing test
 
-This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 38 seconds**, and the final URL and page text assertions held on all four articles.
+This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 42 seconds**, and the URL and page text assertions held on all four articles.
 
 ![Real passing Laya run searching Wikipedia for LLMs, IPv4, IPv6 and Spider-Man](docs/assets/wikipedia-search.gif)
 
-| Step | What        | Model choice                        | Result    | Time  |
-| ---- | ----------- | ----------------------------------- | --------- | ----- |
-| 1    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.3 s |
-| 2    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 4.0 s |
-| 3    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.1 s |
-| 4    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 4.0 s |
-| 5    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 4.8 s |
-| 6    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 3.5 s |
-| 7    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.4 s |
-| 8    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 3.5 s |
+| Step | What        | Model choice                        | Result                         | Time  |
+| ---- | ----------- | ----------------------------------- | ------------------------------ | ----- |
+| 1    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 8.1 s |
+| 2    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 6.8 s |
+| 3    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 5.4 s |
+| 4    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.3 s |
+| 5    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 4.6 s |
+| 6    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.1 s |
+| 7    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 5.0 s |
+| 8    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.9 s |
 
-Every step passed on the first model decision, and each assertion checked the real page: the search box value after typing, and the exact article URL and text after Enter.
+Every step passed on the first model decision.
 
 [Watch the video](docs/assets/wikipedia-search.webm) · [Read the full output](docs/evidence/wikipedia-search.json)
 

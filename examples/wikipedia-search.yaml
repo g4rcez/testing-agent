@@ -6,36 +6,24 @@ backend:
 steps:
   - instruction: Type Large language model into the Search Wikipedia box
     value: Large language model
-    expect:
-      selector: '#searchInput'
-      value: Large language model
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Large_language_model
       text: Large language model
   - instruction: Type IPv4 into the Search Wikipedia box
     value: IPv4
-    expect:
-      selector: '#searchInput'
-      value: IPv4
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv4
       text: Internet Protocol version 4
   - instruction: Type IPv6 into the Search Wikipedia box
     value: IPv6
-    expect:
-      selector: '#searchInput'
-      value: IPv6
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv6
       text: Internet Protocol version 6
   - instruction: Type Spider-Man into the Search Wikipedia box
     value: Spider-Man
-    expect:
-      selector: '#searchInput'
-      value: Spider-Man
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Spider-Man
