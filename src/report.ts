@@ -3,34 +3,22 @@ import { resolve } from "node:path";
 import { summarize, type RunState } from "./runner.ts";
 
 const xml = (value: string) =>
-  value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(
-    /[&<>"']/g,
-    (character) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&apos;",
-      })[character] ?? "",
-  );
+  value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(
+      /[&<>"']/g,
+      (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character] ?? "",
+    );
 
 export function junitReport(state: RunState): string {
-  const elapsed = Math.max(
-    0,
-    ((state.endedAt ?? state.updatedAt) - state.createdAt) / 1000,
-  ).toFixed(3);
+  const elapsed = Math.max(0, ((state.endedAt ?? state.updatedAt) - state.createdAt) / 1000).toFixed(3);
   const passed =
     state.status === "completed" &&
     state.assertions.length > 0 &&
     state.assertions.every((assertion) => assertion.passed);
   const failure = passed
     ? ""
-    : '<failure type="' +
-      xml(state.status) +
-      '" message="' +
-      xml(state.reason ?? "Test did not pass") +
-      '"/>';
+    : '<failure type="' + xml(state.status) + '" message="' + xml(state.reason ?? "Test did not pass") + '"/>';
   return (
     '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites tests="1" failures="' +
     (passed ? "0" : "1") +
@@ -45,13 +33,7 @@ export function junitReport(state: RunState): string {
     '">' +
     failure +
     "<system-out>" +
-    xml(
-      JSON.stringify({
-        runId: state.runId,
-        actions: state.actions,
-        assertions: state.assertions,
-      }),
-    ) +
+    xml(JSON.stringify({ runId: state.runId, actions: state.actions, assertions: state.assertions })) +
     "</system-out></testcase></testsuite></testsuites>\n"
   );
 }
@@ -69,8 +51,7 @@ export async function writeReports(state: RunState, directory: string) {
         ...summarize(state),
         backend: state.input.backend.provider,
         createdAt: new Date(state.createdAt).toISOString(),
-        endedAt:
-          state.endedAt === null ? null : new Date(state.endedAt).toISOString(),
+        endedAt: state.endedAt === null ? null : new Date(state.endedAt).toISOString(),
       },
       null,
       2,

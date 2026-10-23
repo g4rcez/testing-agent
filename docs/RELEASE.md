@@ -6,7 +6,11 @@
 - Pushes to `main` publish only after Linux and macOS verification succeeds, and only from `g4rcez/testing-agent`.
 - Keep the existing `vX.Y.Z` GitHub tag history. The package/repository rename does not reset versions or rewrite `v0.0.1`, which published `agent-tester`.
 - The rename is a patch: the next publication is `testing-agent@0.0.2` and GitHub `v0.0.2`.
-- Later releases inspect all commits since the latest stable tag: `fix` increments patch, `feat` increments minor, and `!` or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer increments major. The highest increment wins. Other commit types do not publish.
+- Later releases inspect all commits since the latest stable tag and every conventional commit type publishes. The highest increment wins:
+  - **major**: `feat!` or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer
+  - **minor**: `feat`, `refactor` (including `refactor!`), `ci`, `perf`, `fix` (including `fix!`)
+  - **patch**: `build`, `chore`, `style`, `test`, `docs`
+  - Other messages (merge commits, `wip`, untyped) do not publish. A `!` on a non-`feat` type does not raise it above its own level.
 - Version changes affect the release workspace only; there are no version-bump commits or CI loops. Tags and npm versions hold release history.
 - Releases are serialized. Keep the legacy concurrency group identifier so renamed workflows also serialize against earlier runs.
 - The release tags the exact source revision whose checks passed. npm publication with provenance and public-registry verification must succeed before GitHub Release creation.
@@ -21,34 +25,17 @@ HTTP 404 means the new npm package is absent. HTTP 200 with no stable versions, 
 
 ## Publishing access
 
-Use a short-lived granular npm token only for bootstrap. Set it privately:
+Releases publish with an npm token stored as the `NPM_TOKEN` repository secret. Set it privately:
 
 ```sh
 gh secret set NPM_TOKEN --repo g4rcez/testing-agent
 ```
 
-The token needs package publishing access and automated 2FA bypass. Never put it in a file or chat. The workflow exposes it only as `BOOTSTRAP_NPM_TOKEN` in the gated release step. Every child process strips both npm token variables by default.
+Use a granular token limited to the `testing-agent` package, with publish access and automated 2FA bypass. Never put it in a file or chat. The workflow exposes it as `NPM_TOKEN` only in the gated release step. Every child process strips both npm token variables, and only `npm publish` receives it as `NODE_AUTH_TOKEN`. The release fails early if the secret is missing.
 
-Only `npm publish` can receive `NODE_AUTH_TOKEN`, and only when the registry returns 404 and either:
+CI uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`; the OIDC permission lets npm sign provenance for token-authenticated publishes. GitHub Release access uses the separate job-scoped `GH_TOKEN` with `contents: write`.
 
-- there is no previous tag and the target is the initial `0.0.1`; or
-- the previous tag is `v0.0.1`, its manifest names `agent-tester`, and the target is the authorized rename patch `0.0.2`.
-
-Later publications and repair-only retries do not receive the bootstrap token, even if the secret still exists.
-
-After bootstrap, configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) in the **testing-agent** package settings:
-
-| Field | Value |
-| --- | --- |
-| Organization or user | `g4rcez` |
-| Repository | `testing-agent` |
-| Workflow filename | `ci.yml` |
-| Environment | Leave blank |
-| Allowed actions | Direct `npm publish` |
-
-CI uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`. npm requires Node 22.14.0+ and npm 11.5.1+. OIDC permission also supports provenance signing for token-authenticated bootstrap. GitHub Release access uses the separate job-scoped `GH_TOKEN` with `contents: write`.
-
-Delete the GitHub bootstrap secret and revoke the granular npm token after the transition. Configure npm-side trust before the next release; the workflow cannot create that trust itself. After verifying OIDC publication, restrict traditional token publishing.
+npm trusted publishing is not configured. To move to it later, configure the trusted publisher for `ci.yml` in the package settings, stop passing `NPM_TOKEN`, and revoke the token.
 
 ## Checks and evidence
 

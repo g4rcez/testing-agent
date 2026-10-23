@@ -13,20 +13,14 @@ let repeats = 3;
 for (let index = 0; index < args.length; index += 2) {
   const flag = args[index],
     value = args[index + 1];
-  if (flag === "--backend" && (value === "jev" || value === "laya"))
-    provider = value;
-  else if (flag === "--repeats" && value && /^[1-5]$/.test(value))
-    repeats = Number(value);
+  if (flag === "--backend" && (value === "jev" || value === "laya")) provider = value;
+  else if (flag === "--repeats" && value && /^[1-5]$/.test(value)) repeats = Number(value);
   else throw new Error("Use --backend jev|laya and --repeats 1..5");
 }
 const config = backendConfig({ provider });
 const health: unknown =
   provider === "laya"
-    ? await (
-        await fetch(config.baseUrl + "/health", {
-          signal: AbortSignal.timeout(3000),
-        })
-      ).json()
+    ? await (await fetch(config.baseUrl + "/health", { signal: AbortSignal.timeout(3000) })).json()
     : { model: config.model };
 const pages: Record<string, string> = {
   "/click":
@@ -45,10 +39,7 @@ const server = Bun.serve({
   port: 0,
   fetch(request) {
     const path = new URL(request.url).pathname;
-    if (path === "/hotel")
-      return new Response(
-        Bun.file(new URL("../tests/browser/app.html", import.meta.url)),
-      );
+    if (path === "/hotel") return new Response(Bun.file(new URL("../tests/browser/app.html", import.meta.url)));
     const page = pages[path];
     return new Response(
       page
@@ -70,11 +61,7 @@ const cases = [
     name: "form",
     prompt: "Enter Lisbon as City and save the form",
     steps: [
-      {
-        instruction: "Enter Lisbon in City",
-        value: "Lisbon",
-        expect: { selector: "[name=city]", value: "Lisbon" },
-      },
+      { instruction: "Enter Lisbon in City", value: "Lisbon", expect: { selector: "[name=city]", value: "Lisbon" } },
       "Click Save",
     ],
     expect: [{ text: "Saved Lisbon" }],
@@ -95,17 +82,9 @@ const cases = [
     name: "navigate",
     prompt: "Open the destination page",
     steps: ["Open destination"],
-    expect: [
-      { text: "Destination page" },
-      { url: new URL("/destination", server.url).href },
-    ],
+    expect: [{ text: "Destination page" }, { url: new URL("/destination", server.url).href }],
   },
-  {
-    ...(await Bun.file(
-      new URL("../examples/stay-search.json", import.meta.url),
-    ).json()),
-    name: "hotel",
-  },
+  { ...(await Bun.file(new URL("../examples/stay-search.json", import.meta.url)).json()), name: "hotel" },
 ];
 const results: unknown[] = [];
 let passed = 0;
@@ -142,9 +121,7 @@ try {
 }
 const revision = await exec("git", ["rev-parse", "HEAD"]);
 const dirty = await exec("git", ["status", "--porcelain"]);
-const browser = await exec(process.env.AGENT_BROWSER_BIN ?? "agent-browser", [
-  "--version",
-]);
+const browser = await exec(process.env.AGENT_BROWSER_BIN ?? "agent-browser", ["--version"]);
 await mkdir("docs/evidence", { recursive: true });
 const receipt = {
   schemaVersion: 1,
@@ -163,15 +140,6 @@ const receipt = {
 };
 const historyPath = `docs/evidence/live-${provider}-${receipt.date.replace(/[:.]/g, "-")}.json`;
 await Bun.write(historyPath, JSON.stringify(receipt, null, 2) + "\n");
-await Bun.write(
-  `docs/evidence/live-${provider}.json`,
-  JSON.stringify(receipt, null, 2) + "\n",
-);
-console.log(
-  JSON.stringify({
-    passed,
-    total: cases.length * repeats,
-    receipt: historyPath,
-  }),
-);
+await Bun.write(`docs/evidence/live-${provider}.json`, JSON.stringify(receipt, null, 2) + "\n");
+console.log(JSON.stringify({ passed, total: cases.length * repeats, receipt: historyPath }));
 if (passed !== cases.length * repeats) process.exitCode = 1;

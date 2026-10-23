@@ -1,14 +1,7 @@
 import { extname, resolve } from "node:path";
 import { z } from "zod";
 import { runSchema } from "./contracts.ts";
-import {
-  cancelRun,
-  recoverRun,
-  resumeRun,
-  startRun,
-  summarize,
-  loadRun,
-} from "./runner.ts";
+import { cancelRun, recoverRun, resumeRun, startRun, summarize, loadRun } from "./runner.ts";
 import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
@@ -47,9 +40,7 @@ async function readTest(path: string) {
   try {
     value = yaml ? Bun.YAML.parse(await file.text()) : await file.json();
   } catch {
-    throw new Error(
-      `Cannot read a valid ${yaml ? "YAML" : "JSON"} test definition`,
-    );
+    throw new Error(`Cannot read a valid ${yaml ? "YAML" : "JSON"} test definition`);
   }
   return z.record(z.string(), z.unknown()).parse(value);
 }
@@ -66,16 +57,12 @@ export async function runCli(args: string[]): Promise<number> {
   }
   if (command === "init") {
     const operands = args.slice(1);
-    const formats = operands.filter(
-      (arg) => arg === "--yaml" || arg === "--json",
-    );
+    const formats = operands.filter((arg) => arg === "--yaml" || arg === "--json");
     const names = operands.filter((arg) => !arg.startsWith("--"));
     if (
       formats.length > 1 ||
       names.length > 1 ||
-      operands.some(
-        (arg) => arg.startsWith("--") && !["--yaml", "--json"].includes(arg),
-      )
+      operands.some((arg) => arg.startsWith("--") && !["--yaml", "--json"].includes(arg))
     )
       throw new Error("Use: testing-agent init [folder] [--yaml|--json]");
     const result = await initTests({
@@ -83,9 +70,9 @@ export async function runCli(args: string[]): Promise<number> {
       ...(formats[0] ? { format: formats[0].slice(2) as InitFormat } : {}),
     });
     console.log(JSON.stringify(result));
-    for (const file of result.created) console.error(`Created ${file}`);
-    for (const file of result.skipped) console.error(`Kept existing ${file}`);
-    console.error(
+    for (const file of result.created) console.info(`Created ${file}`);
+    for (const file of result.skipped) console.warn(`Kept existing ${file}`);
+    console.info(
       `Run it with: testing-agent test ${result.folder}/example.test.${result.created[0]?.endsWith(".json") || result.skipped[0]?.endsWith(".json") ? "json" : "yaml"}`,
     );
     return 0;
@@ -96,8 +83,7 @@ export async function runCli(args: string[]): Promise<number> {
       return 0;
     }
     const manual = positional === "--manual";
-    if ((positional && !manual) || rest.length)
-      throw new Error("Use: testing-agent setup [--manual] or setup laya");
+    if ((positional && !manual) || rest.length) throw new Error("Use: testing-agent setup [--manual] or setup laya");
     const env = detectEnv();
     if (manual) {
       console.log(formatManual(planSetup(env), env));
@@ -105,11 +91,9 @@ export async function runCli(args: string[]): Promise<number> {
     }
     return (await runSetup(env)).failed ? 1 : 0;
   }
-  if (!positional)
-    throw new Error("A test file or run ID is required; use --help");
+  if (!positional) throw new Error("A test file or run ID is required; use --help");
   if (command === "lsp") {
-    if (rest.length)
-      throw new Error("The lsp command takes one file and no options");
+    if (rest.length) throw new Error("The lsp command takes one file and no options");
     console.log(JSON.stringify(await insertEditorSchema(positional)));
     return 0;
   }
@@ -132,58 +116,37 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   if (command === "status") {
-    console.log(
-      JSON.stringify(summarize(await loadRun(z.uuid().parse(positional)))),
-    );
+    console.log(JSON.stringify(summarize(await loadRun(z.uuid().parse(positional)))));
     return 0;
   }
   let state;
   if (command === "test" || command === "run" || command === "validate") {
     const raw = await readTest(positional);
     if (flags["--backend"])
-      raw.backend = {
-        ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}),
-        provider: flags["--backend"],
-      };
+      raw.backend = { ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}), provider: flags["--backend"] };
     if (flags["--url"]) raw.url = flags["--url"];
     if (flags["--session"]) raw.session = flags["--session"];
     if (command !== "validate") raw.recordVideo = true;
     const input = runSchema.parse(raw);
     if (command === "validate") {
-      console.log(
-        JSON.stringify({
-          valid: true,
-          name: input.name,
-          steps: input.steps.length,
-        }),
-      );
+      console.log(JSON.stringify({ valid: true, name: input.name, steps: input.steps.length }));
       return 0;
     }
     await ensureBackend(input.backend);
     state = await startRun(input);
   } else if (command === "resume" || command === "recover") {
     const runId = z.uuid().parse(positional);
-    state =
-      command === "recover" ? await recoverRun(runId) : await resumeRun(runId);
+    state = command === "recover" ? await recoverRun(runId) : await resumeRun(runId);
   } else throw new Error("Unknown command; use --help");
   while (state.status === "paused") state = await resumeRun(state.runId);
-  const reports = await writeReports(
-    state,
-    flags["--report-dir"] ?? resolve(stateRoot(), "reports"),
-  );
+  const reports = await writeReports(state, flags["--report-dir"] ?? resolve(stateRoot(), "reports"));
   console.log(JSON.stringify({ ...summarize(state), reports }));
-  return state.status === "completed"
-    ? 0
-    : state.status === "cancelled"
-      ? 130
-      : 1;
+  return state.status === "completed" ? 0 : state.status === "cancelled" ? 130 : 1;
 }
 
 if (
   import.meta.main ||
-  /(?:^|[\\/])(?:testing-agent|agent-tester|jev-test|agent-browser-jev)$/.test(
-    process.argv[1] ?? "",
-  )
+  /(?:^|[\\/])(?:testing-agent|agent-tester|jev-test|agent-browser-jev)$/.test(process.argv[1] ?? "")
 ) {
   try {
     process.exitCode = await runCli(process.argv.slice(2));

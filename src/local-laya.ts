@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChoiceAnswer, ChoiceQuestion } from "@receptron/laya";
 import { validateChoice } from "./decision.ts";
@@ -26,11 +25,7 @@ const requestSchema = z.object({
         })
         .passthrough(),
     ),
-    page: z.object({
-      url: z.string().optional(),
-      title: z.string().optional(),
-      text: z.string().default(""),
-    }),
+    page: z.object({ url: z.string().optional(), title: z.string().optional(), text: z.string().default("") }),
     recent_actions: z.array(z.unknown()),
   }),
   questions: z
@@ -40,29 +35,17 @@ const requestSchema = z.object({
         type: z.literal("choice"),
         instructions: z.union([
           z.string(),
-          z
-            .object({ goal: z.string(), operation: z.string().optional() })
-            .passthrough(),
+          z.object({ goal: z.string(), operation: z.string().optional() }).passthrough(),
         ]),
         criteria: z
           .record(z.string(), z.union([z.string(), targetSchema]))
-          .refine(
-            (value) =>
-              Object.keys(value).length > 0 && Object.keys(value).length <= 200,
-          ),
+          .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 200),
       }),
     )
-    .refine(
-      (value) =>
-        Object.keys(value).length > 0 && Object.keys(value).length <= 8,
-    ),
+    .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 8),
 });
 
-export type LayaTokenBudget = {
-  countTokens(text: string): number;
-  maxLength: number;
-  headMaxLength: number;
-};
+export type LayaTokenBudget = { countTokens(text: string): number; maxLength: number; headMaxLength: number };
 
 // The pinned runtime uses Python's JSON separators before tokenization.
 function spacedJson(value: unknown): string {
@@ -75,33 +58,23 @@ function spacedJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-function stateRoom(
-  questions: Record<string, ChoiceQuestion>,
-  budget: LayaTokenBudget,
-): number {
-  const count = (text: string) =>
-    budget.countTokens(text.replaceAll("[MASK]", " "));
+function stateRoom(questions: Record<string, ChoiceQuestion>, budget: LayaTokenBudget): number {
+  const count = (text: string) => budget.countTokens(text.replaceAll("[MASK]", " "));
   return Math.min(
     ...Object.values(questions).map((question) => {
       let options = Object.entries(question.criteria).map(
-        ([key, value]) =>
-          1 + Math.min(48, count(` ${value ? `${key}: ${value}` : key}`)),
+        ([key, value]) => 1 + Math.min(48, count(` ${value ? `${key}: ${value}` : key}`)),
       );
       const sum = () => options.reduce((total, size) => total + size, 0);
       if (budget.headMaxLength - sum() < 16) {
-        const per = Math.max(
-          4,
-          Math.floor((budget.headMaxLength - 16) / options.length),
-        );
+        const per = Math.max(4, Math.floor((budget.headMaxLength - 16) / options.length));
         options = options.map((size) => Math.min(size, per));
       }
       const instructionLength = count(
         `choice question: ${typeof question.instructions === "string" ? question.instructions : spacedJson(question.instructions)}`,
       );
       if (instructionLength > Math.max(8, budget.headMaxLength - sum()))
-        throw new Error(
-          "Local Laya instructions exceed the model context limit",
-        );
+        throw new Error("Local Laya instructions exceed the model context limit");
       return budget.maxLength - instructionLength - sum() - 4;
     }),
   );
@@ -115,14 +88,10 @@ function pruneOptions(
   kept: Record<string, string[]>,
   budget: LayaTokenBudget,
 ): void {
-  const count = (text: string) =>
-    budget.countTokens(text.replaceAll("[MASK]", " "));
+  const count = (text: string) => budget.countTokens(text.replaceAll("[MASK]", " "));
   for (const [name, question] of Object.entries(questions)) {
     const entries = Object.entries(question.criteria);
-    const room =
-      budget.headMaxLength -
-      16 -
-      count(`choice question: ${question.instructions}`);
+    const room = budget.headMaxLength - 16 - count(`choice question: ${question.instructions}`);
     const cap = Math.max(1, Math.floor(room / 5));
     if (entries.length <= cap) continue;
     const source = asked[name]?.instructions;
@@ -130,22 +99,15 @@ function pruneOptions(
       .toLowerCase()
       .split(/[^\p{L}\p{N}]+/u)
       .filter((word) => word.length > 2);
-    const score = (description: string) =>
-      goal.filter((word) => description.toLowerCase().includes(word)).length;
+    const score = (description: string) => goal.filter((word) => description.toLowerCase().includes(word)).length;
     const keep = new Set(
       entries
-        .map(([key, description], index) => ({
-          key,
-          index,
-          score: score(String(description)),
-        }))
+        .map(([key, description], index) => ({ key, index, score: score(String(description)) }))
         .sort((a, b) => b.score - a.score || a.index - b.index)
         .slice(0, cap)
         .map((item) => item.key),
     );
-    question.criteria = Object.fromEntries(
-      entries.filter(([key]) => keep.has(key)),
-    );
+    question.criteria = Object.fromEntries(entries.filter(([key]) => keep.has(key)));
     kept[name] = Object.keys(question.criteria);
   }
 }
@@ -156,19 +118,11 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
   const questions: Record<string, ChoiceQuestion> = {};
   for (const [name, question] of Object.entries(parsed.questions)) {
     ids[name] = {};
-    const goal =
-      typeof question.instructions === "string"
-        ? question.instructions
-        : question.instructions.goal;
-    const operation =
-      typeof question.instructions === "string"
-        ? undefined
-        : question.instructions.operation;
+    const goal = typeof question.instructions === "string" ? question.instructions : question.instructions.goal;
+    const operation = typeof question.instructions === "string" ? undefined : question.instructions.operation;
     questions[name] = {
       type: "choice",
-      instructions: operation
-        ? `${operation}: ${goal}`
-        : `${goal} Which browser action is needed now?`,
+      instructions: operation ? `${operation}: ${goal}` : `${goal} Which browser action is needed now?`,
       criteria: Object.fromEntries(
         Object.entries(question.criteria).map(([key, value], index) => {
           const short = index.toString(36);
@@ -186,25 +140,15 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
   if (budget) pruneOptions(parsed.questions, questions, kept, budget);
   const fields = parsed.state.elements
     .filter((element) =>
-      element.operations.some((operation) =>
-        ["TYPE_TEXT", "SELECT", "CHECK", "UNCHECK"].includes(operation),
-      ),
+      element.operations.some((operation) => ["TYPE_TEXT", "SELECT", "CHECK", "UNCHECK"].includes(operation)),
     )
-    .map(({ label, value, checked }) => ({
-      label,
-      value,
-      ...(checked === undefined ? {} : { checked }),
-    }));
+    .map(({ label, value, checked }) => ({ label, value, ...(checked === undefined ? {} : { checked }) }));
   const contexts = new Map<string, unknown>();
   for (const question of Object.values(parsed.questions)) {
     const context =
       typeof question.instructions === "string"
         ? question.instructions
-        : Object.fromEntries(
-            Object.entries(question.instructions).filter(
-              ([key]) => key !== "operation",
-            ),
-          );
+        : Object.fromEntries(Object.entries(question.instructions).filter(([key]) => key !== "operation"));
     contexts.set(JSON.stringify(context), context);
   }
   const state = {
@@ -217,24 +161,17 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
   };
   if (budget) {
     const room = stateRoom(questions, budget);
-    const fits = () =>
-      budget.countTokens(spacedJson(state).replaceAll("[MASK]", " ")) <= room;
+    const fits = () => budget.countTokens(spacedJson(state).replaceAll("[MASK]", " ")) <= room;
     // The model window is small: shed the full step list, then the long rules,
     // keeping the current step, which is all the model acts on.
-    if (!fits() && Array.isArray(state.task.steps))
-      state.task = { ...state.task, steps: [state.current_step] };
+    if (!fits() && Array.isArray(state.task.steps)) state.task = { ...state.task, steps: [state.current_step] };
     if (!fits())
       state.instructions = state.instructions.map((item) =>
         item && typeof item === "object"
-          ? Object.fromEntries(
-              Object.entries(item).filter(([key]) => key !== "rules"),
-            )
+          ? Object.fromEntries(Object.entries(item).filter(([key]) => key !== "rules"))
           : item,
       );
-    if (!fits())
-      throw new Error(
-        "Local Laya task and observed field/history state exceed the model context limit",
-      );
+    if (!fits()) throw new Error("Local Laya task and observed field/history state exceed the model context limit");
     const text = parsed.state.page.text;
     state.page.truncated = true;
     let low = 0,
@@ -247,10 +184,7 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
     }
     state.page.text = text.slice(0, low);
     state.page.truncated = low < text.length;
-    if (!fits())
-      throw new Error(
-        "Local Laya page context exceeds the model context limit",
-      );
+    if (!fits()) throw new Error("Local Laya page context exceeds the model context limit");
   } else state.page.text = parsed.state.page.text;
   return { state, questions, ids, kept };
 }
@@ -270,10 +204,7 @@ export function restoreLayaAnswers(
           choice: ids[answer.choice]!,
           // Options pruned to fit the model window were never offered: probability 0.
           probabilities: Object.fromEntries(
-            Object.entries(ids).map(([key, original]) => [
-              original,
-              answer.probabilities[key] ?? 0,
-            ]),
+            Object.entries(ids).map(([key, original]) => [original, answer.probabilities[key] ?? 0]),
           ),
         },
       ];
@@ -290,10 +221,7 @@ export type LocalLayaModel = {
   close(): Promise<void>;
 };
 
-export function startLocalLayaServer(
-  model: LocalLayaModel,
-  options: { port?: number; apiKey?: string } = {},
-) {
+export function startLocalLayaServer(model: LocalLayaModel, options: { port?: number; apiKey?: string } = {}) {
   let active: Promise<unknown> | undefined;
   let closing: Promise<void> | undefined;
   const server = Bun.serve({
@@ -303,38 +231,20 @@ export function startLocalLayaServer(
     idleTimeout: 60,
     async fetch(request) {
       const url = new URL(request.url);
-      if (
-        !["127.0.0.1", "localhost"].includes(url.hostname) ||
-        Number(url.port) !== server.port
-      )
+      if (!["127.0.0.1", "localhost"].includes(url.hostname) || Number(url.port) !== server.port)
         return Response.json({ error: "Invalid local host" }, { status: 403 });
       const origin = request.headers.get("origin");
       if (origin && origin !== url.origin)
-        return Response.json(
-          { error: "Cross-origin requests are not allowed" },
-          { status: 403 },
-        );
+        return Response.json({ error: "Cross-origin requests are not allowed" }, { status: 403 });
       if (request.method === "GET" && url.pathname === "/health")
         return Response.json({ ready: true, model: modelName });
-      if (url.pathname !== "/v1/systemone")
-        return Response.json({ error: "Not found" }, { status: 404 });
-      if (
-        options.apiKey &&
-        request.headers.get("authorization") !== `Bearer ${options.apiKey}`
-      )
+      if (url.pathname !== "/v1/systemone") return Response.json({ error: "Not found" }, { status: 404 });
+      if (options.apiKey && request.headers.get("authorization") !== `Bearer ${options.apiKey}`)
         return Response.json({ error: "Unauthorized" }, { status: 401 });
-      if (request.method !== "POST")
-        return Response.json({ error: "Use POST" }, { status: 405 });
-      if (active || closing)
-        return Response.json({ error: "Local model is busy" }, { status: 503 });
-      if (
-        request.headers.get("content-type")?.split(";")[0]?.trim() !==
-        "application/json"
-      )
-        return Response.json(
-          { error: "Use application/json" },
-          { status: 415 },
-        );
+      if (request.method !== "POST") return Response.json({ error: "Use POST" }, { status: 405 });
+      if (active || closing) return Response.json({ error: "Local model is busy" }, { status: 503 });
+      if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json")
+        return Response.json({ error: "Use application/json" }, { status: 415 });
       // Reserve capacity before reading the body; there is no unbounded queue.
       let finish!: () => void;
       active = new Promise<void>((resolve) => {
@@ -343,20 +253,11 @@ export function startLocalLayaServer(
       try {
         const prepared = prepareLayaRequest(await request.json(), model.budget);
         if (request.signal.aborted) return new Response(null, { status: 499 });
-        const result = await model.systemOne(
-          prepared.state,
-          prepared.questions,
-        );
-        return Response.json({
-          model: modelName,
-          answers: restoreLayaAnswers(prepared, result.answers),
-        });
+        const result = await model.systemOne(prepared.state, prepared.questions);
+        return Response.json({ model: modelName, answers: restoreLayaAnswers(prepared, result.answers) });
       } catch {
         return Response.json(
-          {
-            error:
-              "Local Laya could not answer this request; check its input and model context limits",
-          },
+          { error: "Local Laya could not answer this request; check its input and model context limits" },
           { status: 422 },
         );
       } finally {
@@ -390,8 +291,7 @@ export async function serveLocalLaya(): Promise<void> {
     JSON.stringify({
       loading: true,
       model: modelName,
-      message:
-        "First setup downloads about 1.7 GB of weights; later runs use the cache.",
+      message: "First setup downloads about 1.7 GB of weights; later runs use the cache.",
     }),
   );
   const { Laya } = await import("@receptron/laya").catch(() => {
@@ -408,63 +308,30 @@ export async function serveLocalLaya(): Promise<void> {
   try {
     // Resolve the tokenizer from the runtime that declares it, including nested installs.
     const require = createRequire(import.meta.resolve("@receptron/laya"));
-    const { Tokenizer } = (await import(
-      require.resolve("@huggingface/tokenizers")
-    )) as {
+    const { Tokenizer } = (await import(require.resolve("@huggingface/tokenizers"))) as {
       Tokenizer: new (
         data: unknown,
         config: unknown,
-      ) => {
-        encode(
-          text: string,
-          options: { add_special_tokens: boolean },
-        ): { ids: number[] };
-      };
+      ) => { encode(text: string, options: { add_special_tokens: boolean }): { ids: number[] } };
     };
     const tokenizer = new Tokenizer(
-      JSON.parse(
-        await readFile(
-          join(model.modelDir, "tokenizer/tokenizer.json"),
-          "utf8",
-        ),
-      ),
-      JSON.parse(
-        await readFile(
-          join(model.modelDir, "tokenizer/tokenizer_config.json"),
-          "utf8",
-        ),
-      ),
+      await Bun.file(join(model.modelDir, "tokenizer/tokenizer.json")).json(),
+      await Bun.file(join(model.modelDir, "tokenizer/tokenizer_config.json")).json(),
     );
     const budget: LayaTokenBudget = {
-      countTokens: (text) =>
-        tokenizer.encode(text, { add_special_tokens: false }).ids.length,
+      countTokens: (text) => tokenizer.encode(text, { add_special_tokens: false }).ids.length,
       maxLength: model.config.max_len,
       headMaxLength: model.config.head_max_len,
     };
     local = startLocalLayaServer(
-      {
-        budget,
-        systemOne: (state, questions) => model.systemOne(state, questions),
-        close: () => model.close(),
-      },
-      {
-        port,
-        ...(process.env.LAYA_API_KEY
-          ? { apiKey: process.env.LAYA_API_KEY }
-          : {}),
-      },
+      { budget, systemOne: (state, questions) => model.systemOne(state, questions), close: () => model.close() },
+      { port, ...(process.env.LAYA_API_KEY ? { apiKey: process.env.LAYA_API_KEY } : {}) },
     );
   } catch (error) {
     await model.close();
     throw error;
   }
-  console.log(
-    JSON.stringify({
-      ready: true,
-      url: String(local.server.url),
-      model: modelName,
-    }),
-  );
+  console.log(JSON.stringify({ ready: true, url: String(local.server.url), model: modelName }));
   await new Promise<void>((resolve, reject) => {
     const stop = () => {
       process.off("SIGINT", stop);

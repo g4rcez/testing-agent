@@ -2,42 +2,26 @@
   "name": "testing-agent",
   "version": "0.0.1",
   "description": "AI-driven browser tests with agent-browser and Jev or Laya decisions",
+  "keywords": [
+    "agent-browser",
+    "ai-testing",
+    "browser-automation",
+    "jev",
+    "laya"
+  ],
+  "homepage": "https://github.com/g4rcez/testing-agent#readme",
+  "bugs": "https://github.com/g4rcez/testing-agent/issues",
   "license": "MIT",
-  "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/g4rcez/testing-agent.git"
   },
-  "homepage": "https://github.com/g4rcez/testing-agent#readme",
-  "bugs": "https://github.com/g4rcez/testing-agent/issues",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
   "bin": {
-    "testing-agent": "./bin/testing-agent",
-    "agent-tester": "./bin/agent-tester",
+    "agent-browser-jev": "./bin/agent-browser-jev",
     "agent-browser-plugin-jev": "./bin/agent-browser-plugin-jev",
+    "agent-tester": "./bin/agent-tester",
     "jev-test": "./bin/jev-test",
-    "agent-browser-jev": "./bin/agent-browser-jev"
-  },
-  "scripts": {
-    "build": "bun run schema:generate && bun build src/plugin.ts src/cli.ts --outdir dist --target bun --external zod --external @receptron/laya",
-    "schema:generate": "bun run scripts/generate-schema.ts",
-    "test": "bun test tests/unit tests/browser",
-    "test:unit": "bun test tests/unit",
-    "test:browser": "bun test tests/browser",
-    "typecheck": "tsc --noEmit",
-    "format:check": "prettier --check src tests scripts package.json tsconfig.json agent-browser.json",
-    "test:package": "bun run scripts/package-smoke.ts",
-    "test:live": "bun run scripts/live.ts",
-    "demo:wikipedia": "bun run build && bun run scripts/demo.ts",
-    "demo:github": "bun run build && bun run scripts/demo.ts --workflow github",
-    "check": "bun run typecheck && bun run format:check && bun run build && bun test && bun run test:package",
-    "prepack": "bun run build"
-  },
-  "engines": {
-    "bun": ">=1.3.14"
+    "testing-agent": "./bin/testing-agent"
   },
   "files": [
     "bin",
@@ -57,25 +41,44 @@
     "SECURITY.md",
     "CHANGELOG.md"
   ],
-  "keywords": [
-    "agent-browser",
-    "jev",
-    "laya",
-    "ai-testing",
-    "browser-automation"
-  ],
-  "peerDependencies": {
-    "agent-browser": ">=0.32.1 <0.40.0"
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "bun run schema:generate && bun build src/plugin.ts src/cli.ts --outdir dist --target bun --external zod --external @receptron/laya",
+    "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run build && bun test && bun run test:package",
+    "demo:github": "bun run build && bun run scripts/demo.ts --workflow github",
+    "demo:wikipedia": "bun run build && bun run scripts/demo.ts",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint",
+    "prepack": "bun run build",
+    "schema:generate": "bun run scripts/generate-schema.ts",
+    "test": "bun test tests/unit tests/browser",
+    "test:browser": "bun test tests/browser",
+    "test:live": "bun run scripts/live.ts",
+    "test:package": "bun run scripts/package-smoke.ts",
+    "test:unit": "bun test tests/unit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/bun": "1.4.3",
-    "prettier": "3.9.10",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
     "typescript": "7.0.2"
+  },
+  "peerDependencies": {
+    "agent-browser": ">=0.37.0"
   },
   "optionalDependencies": {
     "@receptron/laya": "0.2.0"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
   }
 }

@@ -9,26 +9,24 @@ import { z } from "zod";
 const exec = promisify(execFile);
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-export function nextVersion(
-  previous: string | undefined,
-  messages: string[],
-): string | null {
+const patchTypes = new Set(["build", "chore", "style", "test", "docs"]);
+const minorTypes = new Set(["feat", "refactor", "ci", "perf", "fix"]);
+
+// Only a breaking feat (or a BREAKING CHANGE footer) is a major release; any other
+// recognised type releases at least a patch, so every conventional commit ships.
+export function nextVersion(previous: string | undefined, messages: string[]): string | null {
   if (previous === undefined) return "0.0.1";
   const match = stableVersion.exec(previous);
   if (!match) throw new Error("Invalid previous release version");
   let increment = 0;
   for (const message of messages) {
     const header = /^([a-z]+)(?:\([^\r\n)]+\))?(!)?:[\t ]+\S/.exec(message);
-    if (header?.[2] || /^BREAKING[ -]CHANGE:[\t ]*\S/m.test(message))
-      increment = 3;
-    else if (header?.[1] === "feat") increment = Math.max(increment, 2);
-    else if (header?.[1] === "fix") increment = Math.max(increment, 1);
+    const type = header?.[1] ?? "";
+    if ((header?.[2] && type === "feat") || /^BREAKING[ -]CHANGE:[\t ]*\S/m.test(message)) increment = 3;
+    else if (minorTypes.has(type)) increment = Math.max(increment, 2);
+    else if (patchTypes.has(type)) increment = Math.max(increment, 1);
   }
-  const [major, minor, patch] = match.slice(1).map(Number) as [
-    number,
-    number,
-    number,
-  ];
+  const [major, minor, patch] = match.slice(1).map(Number) as [number, number, number];
   return increment === 3
     ? `${major + 1}.0.0`
     : increment === 2
@@ -38,15 +36,8 @@ export function nextVersion(
         : null;
 }
 
-type PublishedArtifact = {
-  gitHead?: string | undefined;
-  dist?: { integrity?: string | undefined } | undefined;
-};
-export function assertPublishedArtifact(
-  published: PublishedArtifact,
-  revision: string,
-  integrity: string,
-): void {
+type PublishedArtifact = { gitHead?: string | undefined; dist?: { integrity?: string | undefined } | undefined };
+export function assertPublishedArtifact(published: PublishedArtifact, revision: string, integrity: string): void {
   if (published.gitHead !== revision || published.dist?.integrity !== integrity)
     throw new Error(
       "The npm version already exists with a different revision or artifact; refusing to overwrite or advance it",
@@ -60,9 +51,7 @@ export async function verifyNpmPublication(
   request: (url: string) => Promise<Response> = (url) =>
     fetch(url, { signal: AbortSignal.timeout(15000), cache: "no-store" }),
 ): Promise<void> {
-  const response = await request(
-    `https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`,
-  );
+  const response = await request(`https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`);
   if (!response.ok)
     throw new Error(
       `npm ${version} is not publicly available (${response.status}); check staged-publication approval before creating a GitHub release`,
@@ -84,8 +73,7 @@ export function publicationBaseline(
 ): string | undefined {
   if (!previousTag) return undefined;
   if (previousPackage === "agent-tester") return undefined;
-  if (previousPackage !== "testing-agent")
-    throw new Error("Unexpected package in release history");
+  if (previousPackage !== "testing-agent") throw new Error("Unexpected package in release history");
   return previousTag.slice(1);
 }
 
@@ -118,9 +106,7 @@ export function pendingRelease(
     );
   if (latest === previous) return undefined;
   if (previous !== undefined && !Object.hasOwn(versions, previous))
-    throw new Error(
-      "The GitHub release baseline is missing from npm; reconcile the release history before publishing",
-    );
+    throw new Error("The GitHub release baseline is missing from npm; reconcile the release history before publishing");
   if (versions[latest]?.gitHead !== revision)
     throw new Error(
       `npm ${latest} is awaiting GitHub release completion; rerun its original revision before publishing another release`,
@@ -128,40 +114,20 @@ export function pendingRelease(
   return latest;
 }
 
-export function assertOidcEnvironment(
-  environment: Record<string, string | undefined>,
-): void {
-  if (
-    !environment.ACTIONS_ID_TOKEN_REQUEST_URL ||
-    !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN
-  )
-    throw new Error(
-      "GitHub OIDC is unavailable; grant id-token: write and configure the npm trusted publisher for ci.yml",
-    );
+export function assertOidcEnvironment(environment: Record<string, string | undefined>): void {
+  if (!environment.ACTIONS_ID_TOKEN_REQUEST_URL || !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN)
+    throw new Error("GitHub OIDC is unavailable; grant id-token: write so npm can sign provenance");
 }
 
+// Child processes never see the npm token; only `npm publish` receives it.
 export function npmPublishEnvironment(
   environment: Record<string, string | undefined>,
-  release?: {
-    version: string;
-    previousTag: string | undefined;
-    registryExists: boolean;
-    previousPackage?: string | undefined;
-  },
+  publishing = false,
 ): Record<string, string | undefined> {
   const clean = { ...environment };
-  delete clean.BOOTSTRAP_NPM_TOKEN;
+  delete clean.NPM_TOKEN;
   delete clean.NODE_AUTH_TOKEN;
-  if (
-    release &&
-    ((release.version === "0.0.1" && !release.previousTag) ||
-      (release.previousPackage === "agent-tester" &&
-        release.previousTag === "v0.0.1" &&
-        release.version === "0.0.2")) &&
-    !release.registryExists &&
-    environment.BOOTSTRAP_NPM_TOKEN
-  )
-    clean.NODE_AUTH_TOKEN = environment.BOOTSTRAP_NPM_TOKEN;
+  if (publishing && environment.NPM_TOKEN) clean.NODE_AUTH_TOKEN = environment.NPM_TOKEN;
   return clean;
 }
 
@@ -171,12 +137,7 @@ async function command(
   environment = npmPublishEnvironment(process.env),
 ): Promise<string> {
   return (
-    await exec(binary, args, {
-      encoding: "utf8",
-      env: environment,
-      timeout: 180_000,
-      maxBuffer: 2_000_000,
-    })
+    await exec(binary, args, { encoding: "utf8", env: environment, timeout: 180_000, maxBuffer: 2_000_000 })
   ).stdout.trim();
 }
 
@@ -188,42 +149,28 @@ async function release(): Promise<void> {
     process.env.GITHUB_REF !== "refs/heads/main" ||
     !["push", "workflow_dispatch"].includes(process.env.GITHUB_EVENT_NAME ?? "")
   )
-    throw new Error(
-      "Publishing is allowed only from this repository's green main-branch GitHub workflow",
-    );
+    throw new Error("Publishing is allowed only from this repository's green main-branch GitHub workflow");
   assertOidcEnvironment(process.env);
+  if (!process.env.NPM_TOKEN) throw new Error("NPM_TOKEN is not set; add it as a repository secret");
   const revision = z
     .string()
     .regex(/^[a-f0-9]{40}$/)
     .parse(process.env.GITHUB_SHA);
   if ((await command("git", ["rev-parse", "HEAD"])) !== revision)
     throw new Error("Release checkout does not match the checked revision");
-  const tags = (
-    await command("git", ["tag", "--list", "v*", "--sort=-version:refname"])
-  )
+  const tags = (await command("git", ["tag", "--list", "v*", "--sort=-version:refname"]))
     .split("\n")
     .filter((tag) => stableVersion.test(tag.slice(1)));
   const previousTag = tags[0];
   let sameRevision = false;
   if (previousTag) {
     // A rerun of an old workflow must never publish behind a newer release.
-    await command("git", [
-      "merge-base",
-      "--is-ancestor",
-      previousTag,
-      revision,
-    ]);
-    sameRevision =
-      (await command("git", ["rev-list", "-n", "1", previousTag])) === revision;
+    await command("git", ["merge-base", "--is-ancestor", previousTag, revision]);
+    sameRevision = (await command("git", ["rev-list", "-n", "1", previousTag])) === revision;
   }
   const previousPackage = previousTag
-    ? z
-        .object({ name: z.string() })
-        .parse(
-          JSON.parse(
-            await command("git", ["show", `${previousTag}:package.json`]),
-          ),
-        ).name
+    ? z.object({ name: z.string() }).parse(JSON.parse(await command("git", ["show", `${previousTag}:package.json`])))
+        .name
     : undefined;
   const baseline = publicationBaseline(previousTag, previousPackage);
   const range = previousTag ? `${previousTag}..${revision}` : revision;
@@ -231,15 +178,11 @@ async function release(): Promise<void> {
     .split("\0")
     .map((message) => message.trim())
     .filter(Boolean);
-  const response = await fetch(
-    `https://registry.npmjs.org/testing-agent?verify=${Date.now()}`,
-    {
-      signal: AbortSignal.timeout(15000),
-      cache: "no-store",
-    },
-  );
-  if (!response.ok && response.status !== 404)
-    throw new Error(`npm registry lookup failed (${response.status})`);
+  const response = await fetch(`https://registry.npmjs.org/testing-agent?verify=${Date.now()}`, {
+    signal: AbortSignal.timeout(15000),
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 404) throw new Error(`npm registry lookup failed (${response.status})`);
   const registry =
     response.status === 404
       ? undefined
@@ -256,39 +199,22 @@ async function release(): Promise<void> {
           })
           .parse(await response.json());
   const pending = pendingRelease(baseline, registry?.versions, revision);
-  const version =
-    pending ??
-    (sameRevision
-      ? previousTag!.slice(1)
-      : nextVersion(previousTag?.slice(1), messages));
+  const version = pending ?? (sameRevision ? previousTag!.slice(1) : nextVersion(previousTag?.slice(1), messages));
   if (!version) {
-    console.log(
-      JSON.stringify({
-        released: false,
-        reason:
-          "No fix, feat, or breaking-change commits since the last release",
-      }),
-    );
+    console.log(JSON.stringify({ released: false, reason: "No conventional commits since the last release" }));
     return;
   }
   const tag = `v${version}`;
   const manifest = await Bun.file("package.json").json();
-  if (manifest.name !== "testing-agent")
-    throw new Error("Unexpected package name");
-  await writeFile(
-    "package.json",
-    JSON.stringify({ ...manifest, version, gitHead: revision }, null, 2) + "\n",
-  );
+  if (manifest.name !== "testing-agent") throw new Error("Unexpected package name");
+  await writeFile("package.json", JSON.stringify({ ...manifest, version, gitHead: revision }, null, 2) + "\n");
   await command("bun", ["run", "build"]);
   const packed = z
     .array(z.object({ filename: z.string() }))
     .min(1)
-    .parse(
-      JSON.parse(await command("npm", ["pack", "--ignore-scripts", "--json"])),
-    );
+    .parse(JSON.parse(await command("npm", ["pack", "--ignore-scripts", "--json"])));
   const archive = packed[0]!.filename;
-  if (archive !== `testing-agent-${version}.tgz`)
-    throw new Error("Unexpected package archive");
+  if (archive !== `testing-agent-${version}.tgz`) throw new Error("Unexpected package archive");
   const integrity =
     "sha512-" +
     createHash("sha512")
@@ -299,45 +225,23 @@ async function release(): Promise<void> {
   else
     await command(
       "npm",
-      [
-        "publish",
-        archive,
-        "--access",
-        "public",
-        "--provenance",
-        "--ignore-scripts",
-      ],
-      npmPublishEnvironment(process.env, {
-        version,
-        previousTag,
-        registryExists: registry !== undefined,
-        previousPackage,
-      }),
+      ["publish", archive, "--access", "public", "--provenance", "--ignore-scripts"],
+      npmPublishEnvironment(process.env, true),
     );
 
   await verifyNpmPublication(version, revision, integrity);
 
   // A failed GitHub release after a successful npm publish is repairable by
   // rerunning this exact workflow, but only for the identical package bytes.
-  const github = await fetch(
-    `https://api.github.com/repos/${repository}/releases/tags/${tag}`,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.GH_TOKEN ?? ""}`,
-        Accept: "application/vnd.github+json",
-      },
-      signal: AbortSignal.timeout(15000),
-    },
-  );
+  const github = await fetch(`https://api.github.com/repos/${repository}/releases/tags/${tag}`, {
+    headers: { Authorization: `Bearer ${process.env.GH_TOKEN ?? ""}`, Accept: "application/vnd.github+json" },
+    signal: AbortSignal.timeout(15000),
+  });
   if (github.status === 404) {
     const directory = await mkdtemp(join(tmpdir(), "testing-agent-release-"));
     try {
       const notes = join(directory, "notes.md");
-      const commits = await command("git", [
-        "log",
-        range,
-        "--format=- %s (%h)",
-      ]);
+      const commits = await command("git", ["log", range, "--format=- %s (%h)"]);
       await writeFile(
         notes,
         `npm: https://www.npmjs.com/package/testing-agent/v/${version}\n\nRevision: ${revision}\n\n${commits}\n`,
@@ -359,17 +263,8 @@ async function release(): Promise<void> {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  } else if (!github.ok)
-    throw new Error(`GitHub release lookup failed (${github.status})`);
-  console.log(
-    JSON.stringify({
-      released: true,
-      package: `testing-agent@${version}`,
-      tag,
-      revision,
-      integrity,
-    }),
-  );
+  } else if (!github.ok) throw new Error(`GitHub release lookup failed (${github.status})`);
+  console.log(JSON.stringify({ released: true, package: `testing-agent@${version}`, tag, revision, integrity }));
 }
 
 if (import.meta.main) await release();

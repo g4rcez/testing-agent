@@ -6,11 +6,7 @@ import { runSchema } from "../../src/contracts.ts";
 
 const directory = await mkdtemp(join(tmpdir(), "jev-cli-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
-const backendProbe = Bun.serve({
-  hostname: "127.0.0.1",
-  port: 0,
-  fetch: () => new Response(null, { status: 405 }),
-});
+const backendProbe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null, { status: 405 }) });
 afterAll(() => backendProbe.stop(true));
 const definition = {
   name: "Example",
@@ -35,10 +31,10 @@ expect:
 async function validate(name: string, content: string, flags: string[] = []) {
   const path = join(directory, name);
   await Bun.write(path, content);
-  const child = Bun.spawn(
-    [process.execPath, "src/cli.ts", "validate", path, ...flags],
-    { stdout: "pipe", stderr: "pipe" },
-  );
+  const child = Bun.spawn([process.execPath, "src/cli.ts", "validate", path, ...flags], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -52,33 +48,22 @@ describe("CLI test definitions", () => {
     const metadata = await Bun.file("package.json").json();
     expect(metadata.name).toBe("testing-agent");
     expect(metadata.files).toContain("docs/REFERENCE.md");
-    expect(metadata.repository.url).toBe(
-      "git+https://github.com/g4rcez/testing-agent.git",
-    );
+    expect(metadata.repository.url).toBe("git+https://github.com/g4rcez/testing-agent.git");
     expect(metadata.bin["testing-agent"]).toBe("./bin/testing-agent");
     expect(metadata.bin["agent-tester"]).toBe("./bin/agent-tester");
-    expect(metadata.bin["agent-browser-plugin-jev"]).toBe(
-      "./bin/agent-browser-plugin-jev",
-    );
-    for (const path of Object.values(metadata.bin))
-      expect(await Bun.file(String(path)).exists()).toBe(true);
+    expect(metadata.bin["agent-browser-plugin-jev"]).toBe("./bin/agent-browser-plugin-jev");
+    for (const path of Object.values(metadata.bin)) expect(await Bun.file(String(path)).exists()).toBe(true);
     expect(metadata.bin["agent-browser-jev"]).toBe("./bin/agent-browser-jev");
     expect(metadata.bin["jev-test"]).toBe("./bin/jev-test");
-    expect(await Bun.file(metadata.bin["agent-browser-jev"]).text()).toContain(
-      "../dist/cli.js",
-    );
+    expect(await Bun.file(metadata.bin["agent-browser-jev"]).text()).toContain("../dist/cli.js");
   });
 
   test("README first test matches the Wikipedia example", async () => {
     const readme = await Bun.file("README.md").text();
-    const firstTest = readme
-      .split("## First test\n")[1]
-      ?.split("## Editor autocomplete")[0];
+    const firstTest = readme.split("## First test\n")[1]?.split("## Editor autocomplete")[0];
     const snippet = firstTest?.match(/```yaml\n([\s\S]*?)```/)?.[1];
     expect(snippet).toBeDefined();
-    const example = Bun.YAML.parse(
-      await Bun.file("examples/wikipedia-search.yaml").text(),
-    );
+    const example = Bun.YAML.parse(await Bun.file("examples/wikipedia-search.yaml").text());
     expect(Bun.YAML.parse(snippet!)).toEqual(example);
     const input = runSchema.parse(example);
     expect(input.steps).toHaveLength(8);
@@ -90,20 +75,11 @@ describe("CLI test definitions", () => {
   test("ships equivalent JSON/YAML examples and valid GitHub definitions", async () => {
     for (const name of ["stay-search"]) {
       const json = await Bun.file(`examples/${name}.json`).json();
-      const yaml = Bun.YAML.parse(
-        await Bun.file(`examples/${name}.yaml`).text(),
-      );
+      const yaml = Bun.YAML.parse(await Bun.file(`examples/${name}.yaml`).text());
       expect(runSchema.parse(yaml)).toEqual(runSchema.parse(json));
     }
-    for (const name of [
-      "github-star",
-      "github-star-sign-in",
-      "github-repository-tour",
-      "stay-search-journey",
-    ]) {
-      const yaml = Bun.YAML.parse(
-        await Bun.file(`examples/${name}.yaml`).text(),
-      );
+    for (const name of ["github-star", "github-star-sign-in", "github-repository-tour", "stay-search-journey"]) {
+      const yaml = Bun.YAML.parse(await Bun.file(`examples/${name}.yaml`).text());
       expect(runSchema.safeParse(yaml).success).toBe(true);
       if (["github-repository-tour", "stay-search-journey"].includes(name)) {
         expect(runSchema.parse(yaml).steps.length).toBeGreaterThanOrEqual(5);
@@ -112,18 +88,11 @@ describe("CLI test definitions", () => {
     }
   });
   test("an offline backend stops before browser startup and asks for setup", async () => {
-    const closed = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch: () => new Response(),
-    });
+    const closed = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
     const baseUrl = String(closed.url);
     closed.stop(true);
     const path = join(directory, "offline.json");
-    await Bun.write(
-      path,
-      JSON.stringify({ ...definition, backend: { provider: "laya", baseUrl } }),
-    );
+    await Bun.write(path, JSON.stringify({ ...definition, backend: { provider: "laya", baseUrl } }));
     const child = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
       env: {
         ...process.env,
@@ -148,10 +117,7 @@ describe("CLI test definitions", () => {
         () => false,
       ),
     ).toBe(false);
-    expect(
-      (await validate("offline-validation.json", await Bun.file(path).text()))
-        .code,
-    ).toBe(0);
+    expect((await validate("offline-validation.json", await Bun.file(path).text())).code).toBe(0);
   });
 
   test("test command records by default and prints steps plus final result as JSON", async () => {
@@ -180,10 +146,7 @@ console.log(JSON.stringify({success:true,data}));
     const path = join(directory, "run.yaml");
     await Bun.write(
       path,
-      yaml.replace(
-        "  - Open details",
-        "  - instruction: Open details\n    expect:\n      text: Details",
-      ),
+      yaml.replace("  - Open details", "  - instruction: Open details\n    expect:\n      text: Details"),
     );
     const child = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
       env: {
@@ -206,13 +169,7 @@ console.log(JSON.stringify({success:true,data}));
     const result = JSON.parse(stdout);
     expect(result.passed).toBe(true);
     expect(result.steps).toEqual([
-      {
-        step: 1,
-        instruction: "Open details",
-        status: "passed",
-        success: true,
-        verification: "assertion",
-      },
+      { step: 1, instruction: "Open details", status: "passed", success: true, verification: "assertion" },
     ]);
     expect(result.video.status).toBe("saved");
     expect(result.video.path.endsWith(".mp4")).toBe(true);
@@ -223,9 +180,7 @@ console.log(JSON.stringify({success:true,data}));
     expect(commands[0]).toContain("record");
     expect(commands[0]).toContain("start");
     expect(commands.at(-1)).toContain("stop");
-    expect((await Bun.file(result.reports.json).json()).steps).toEqual(
-      result.steps,
-    );
+    expect((await Bun.file(result.reports.json).json()).steps).toEqual(result.steps);
     const failing = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
       env: {
         ...process.env,
@@ -250,11 +205,7 @@ console.log(JSON.stringify({success:true,data}));
     for (const name of ["test.json", "extensionless"]) {
       const result = await validate(name, JSON.stringify(definition));
       expect(result.code).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual({
-        valid: true,
-        name: "Example",
-        steps: 1,
-      });
+      expect(JSON.parse(result.stdout)).toEqual({ valid: true, name: "Example", steps: 1 });
     }
   });
 
@@ -262,20 +213,15 @@ console.log(JSON.stringify({success:true,data}));
     for (const name of ["test.yaml", "test.yml", "test.YAML"]) {
       const result = await validate(name, yaml);
       expect(result.code).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual({
-        valid: true,
-        name: "Example",
-        steps: 1,
-      });
+      expect(JSON.parse(result.stdout)).toEqual({ valid: true, name: "Example", steps: 1 });
     }
   });
 
   test("applies CLI overrides to YAML before schema validation", async () => {
-    const result = await validate(
-      "override.yaml",
-      yaml.replace("provider: laya", "provider: invalid"),
-      ["--backend", "laya"],
-    );
+    const result = await validate("override.yaml", yaml.replace("provider: laya", "provider: invalid"), [
+      "--backend",
+      "laya",
+    ]);
     expect(result.code).toBe(0);
   });
 
@@ -287,12 +233,7 @@ console.log(JSON.stringify({success:true,data}));
   });
 
   test("rejects YAML roots and definitions outside the existing contract", async () => {
-    for (const content of [
-      "null",
-      "- one\n- two",
-      "hello",
-      yaml.replace("  - text: Details", "  - checked: true"),
-    ]) {
+    for (const content of ["null", "- one\n- two", "hello", yaml.replace("  - text: Details", "  - checked: true")]) {
       expect((await validate("invalid.yaml", content)).code).toBe(2);
     }
   });

@@ -1,13 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import {
-  dirname,
-  extname,
-  isAbsolute,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { runSchema } from "./contracts.ts";
 
@@ -19,11 +10,7 @@ export function testJsonSchema() {
     description:
       "Ordered browser test instructions, browser configuration, and expected results. Final assertions are required; model DONE alone cannot pass a test.",
     properties: {
-      $schema: {
-        type: "string",
-        description:
-          "Editor JSON Schema reference. Ignored when running the test.",
-      },
+      $schema: { type: "string", description: "Editor JSON Schema reference. Ignored when running the test." },
       ...schema.properties,
     },
   };
@@ -68,13 +55,9 @@ function jsonWithSchema(content: string, reference: string): string {
     close = content.lastIndexOf("}");
   const body = content.slice(open + 1, close);
   const trailing = body.match(/\s*$/)?.[0] ?? "";
-  const members = body.trim()
-    ? jsonMembers(body.slice(0, body.length - trailing.length))
-    : [];
+  const members = body.trim() ? jsonMembers(body.slice(0, body.length - trailing.length)) : [];
   const first = members[0]?.match(/^(\s*)("(?:\\.|[^"\\])*")(\s*:\s*)/);
-  const leading =
-    first?.[1] ??
-    (body.includes("\n") ? (body.includes("\r\n") ? "\r\n  " : "\n  ") : "");
+  const leading = first?.[1] ?? (body.includes("\n") ? (body.includes("\r\n") ? "\r\n  " : "\n  ") : "");
   const separator = first?.[3] ?? (body.includes("\n") ? ": " : ":");
   const remaining = members.filter((member) => {
     const key = member.match(/^\s*("(?:\\.|[^"\\])*")\s*:/)?.[1];
@@ -99,10 +82,7 @@ function yamlWithoutSchemaDirectives(body: string): string {
   return (body.match(/[^\n]*\n|[^\n]+$/g) ?? [])
     .filter((line) => {
       if (line.trim() && !line.trimStart().startsWith("#")) header = false;
-      return (
-        !header ||
-        !/^[\t ]*#[\t ]*yaml-language-server:[\t ]*\$schema=/.test(line)
-      );
+      return !header || !/^[\t ]*#[\t ]*yaml-language-server:[\t ]*\$schema=/.test(line);
     })
     .join("");
 }
@@ -112,34 +92,24 @@ function yamlWithSchema(content: string, reference: string): string {
   const body = content.slice(bom.length);
   const newline = body.includes("\r\n") ? "\r\n" : "\n";
   const remaining = yamlWithoutSchemaDirectives(body);
-  const updated =
-    `# yaml-language-server: $schema=${reference}` + newline + remaining;
-  return (
-    bom +
-    (body && !body.endsWith("\n") ? updated.replace(/\r?\n$/, "") : updated)
-  );
+  const updated = `# yaml-language-server: $schema=${reference}` + newline + remaining;
+  return bom + (body && !body.endsWith("\n") ? updated.replace(/\r?\n$/, "") : updated);
 }
 
 export async function insertEditorSchema(path: string) {
   const extension = extname(path).toLowerCase();
   if (![".yaml", ".yml", ".json"].includes(extension))
     throw new Error("The lsp command requires a .yaml, .yml, or .json file");
-  if (Bun.file(path).size > 1_000_000)
-    throw new Error("Test definition exceeds 1 MB");
-  const content = await readFile(path, "utf8");
+  if (Bun.file(path).size > 1_000_000) throw new Error("Test definition exceeds 1 MB");
+  const content = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await Bun.file(path).arrayBuffer());
   const schemaPath = resolve(import.meta.dir, "../schema/test.schema.json");
   if (!(await Bun.file(schemaPath).exists()))
-    throw new Error(
-      "Bundled test schema is missing; rebuild or reinstall the package",
-    );
+    throw new Error("Bundled test schema is missing; rebuild or reinstall the package");
   const relativePath = relative(dirname(resolve(path)), schemaPath);
   const schema = isAbsolute(relativePath)
-    ? pathToFileURL(schemaPath).href
+    ? Bun.pathToFileURL(schemaPath).href
     : relativePath.split(sep).map(encodeURIComponent).join("/");
-  const updated =
-    extension === ".json"
-      ? jsonWithSchema(content, schema)
-      : yamlWithSchema(content, schema);
-  if (updated !== content) await writeFile(path, updated, "utf8");
+  const updated = extension === ".json" ? jsonWithSchema(content, schema) : yamlWithSchema(content, schema);
+  if (updated !== content) await Bun.write(path, updated);
   return { file: resolve(path), schema, changed: updated !== content };
 }

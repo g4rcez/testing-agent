@@ -22,10 +22,7 @@ export async function checkBackend(
   try {
     config = backendConfig(backend);
   } catch {
-    throw new BackendSetupError(
-      backend,
-      `${backend.provider} backend is not configured correctly`,
-    );
+    throw new BackendSetupError(backend, `${backend.provider} backend is not configured correctly`);
   }
   let response: Response;
   try {
@@ -33,15 +30,10 @@ export async function checkBackend(
       method: "GET",
       redirect: "error",
       signal: AbortSignal.timeout(5000),
-      headers: config.apiKey
-        ? { Authorization: `Bearer ${config.apiKey}` }
-        : {},
+      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
     });
   } catch {
-    throw new BackendSetupError(
-      backend,
-      `${backend.provider} backend is not reachable; no browser was started`,
-    );
+    throw new BackendSetupError(backend, `${backend.provider} backend is not reachable; no browser was started`);
   }
   try {
     // GET need not be implemented by a POST-only inference endpoint.
@@ -69,10 +61,11 @@ async function askYesNo(question: string): Promise<boolean> {
 }
 
 function spawnLayaSetup(): void {
-  const child = Bun.spawn(
-    [process.execPath, process.argv[1] ?? "", "setup", "laya"],
-    { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
-  );
+  const child = Bun.spawn([process.execPath, process.argv[1] ?? "", "setup", "laya"], {
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   child.unref();
 }
 
@@ -80,7 +73,7 @@ const defaultPrompts: BackendPrompts = {
   interactive: Boolean(process.stdin.isTTY && process.stderr.isTTY),
   confirm: askYesNo,
   start: spawnLayaSetup,
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  wait: (ms) => Bun.sleep(ms),
 };
 
 // Checks the backend; for an unreachable local Laya in a terminal, offers to start it.

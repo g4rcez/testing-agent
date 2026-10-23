@@ -6,11 +6,7 @@ import {
   type LocalLayaModel,
 } from "../../src/local-laya.ts";
 
-const budget = {
-  countTokens: (text: string) => text.length,
-  maxLength: 4096,
-  headMaxLength: 1024,
-};
+const budget = { countTokens: (text: string) => text.length, maxLength: 4096, headMaxLength: 1024 };
 const input = {
   state: {
     task: {
@@ -20,35 +16,20 @@ const input = {
       current_step_number: 1,
     },
     page: { text: "Blog" },
-    elements: [
-      {
-        label: "Terminal",
-        role: "textbox",
-        value: "",
-        operations: ["TYPE_TEXT"],
-      },
-    ],
+    elements: [{ label: "Terminal", role: "textbox", value: "", operations: ["TYPE_TEXT"] }],
     recent_actions: [],
   },
   questions: {
     operation: {
       type: "choice",
-      instructions: {
-        goal: "Type ls",
-        rules: "Keep original intent",
-        original_request: "Use the blog",
-      },
+      instructions: { goal: "Type ls", rules: "Keep original intent", original_request: "Use the blog" },
       criteria: { TYPE_TEXT: "Type text", DONE: "Completed" },
     },
     type_text_target: {
       type: "choice",
       instructions: { goal: "Type ls", operation: "TYPE_TEXT" },
       criteria: {
-        "long-stable-target-id": {
-          element: "[long-stable-target-id] Terminal",
-          role: "textbox",
-          current_value: "",
-        },
+        "long-stable-target-id": { element: "[long-stable-target-id] Terminal", role: "textbox", current_value: "" },
       },
     },
   },
@@ -64,15 +45,9 @@ test("local adapter retains task context and removes identifier overhead, not ch
     rules: "Keep original intent",
     original_request: "Use the blog",
   });
-  expect(prepared.questions.type_text_target!.instructions).toContain(
-    "TYPE_TEXT",
-  );
-  expect(
-    Object.values(prepared.questions.type_text_target!.criteria)[0],
-  ).toContain("Terminal");
-  expect(JSON.stringify(prepared.questions.type_text_target)).not.toContain(
-    "long-stable-target-id",
-  );
+  expect(prepared.questions.type_text_target!.instructions).toContain("TYPE_TEXT");
+  expect(Object.values(prepared.questions.type_text_target!.criteria)[0]).toContain("Terminal");
+  expect(JSON.stringify(prepared.questions.type_text_target)).not.toContain("long-stable-target-id");
   const result = restoreLayaAnswers(prepared, {
     operation: {
       type: "choice",
@@ -92,34 +67,21 @@ test("local adapter retains task context and removes identifier overhead, not ch
     },
   });
   expect(result.operation!.choice).toBe("TYPE_TEXT");
-  expect(result.operation!.probabilities).toEqual({
-    TYPE_TEXT: 0.9,
-    DONE: 0.1,
-  });
+  expect(result.operation!.probabilities).toEqual({ TYPE_TEXT: 0.9, DONE: 0.1 });
   expect(result.type_text_target!.choice).toBe("long-stable-target-id");
   expect(result.type_text_target!.confidence).toBe(1);
 });
 
 test("context budgeting preserves instructions and task, clips only page text, and rejects oversized field state", () => {
-  const longPage = {
-    ...input,
-    state: { ...input.state, page: { text: "visible page ".repeat(1000) } },
-  };
+  const longPage = { ...input, state: { ...input.state, page: { text: "visible page ".repeat(1000) } } };
   const prepared = prepareLayaRequest(longPage, budget);
   expect(prepared.state.page.truncated).toBe(true);
-  expect(prepared.state.page.text.length).toBeLessThan(
-    longPage.state.page.text.length,
-  );
+  expect(prepared.state.page.text.length).toBeLessThan(longPage.state.page.text.length);
   expect(prepared.state.task).toEqual(input.state.task);
-  expect(prepared.state.instructions).toContainEqual(
-    input.questions.operation.instructions,
-  );
+  expect(prepared.state.instructions).toContainEqual(input.questions.operation.instructions);
   const longField = {
     ...input,
-    state: {
-      ...input.state,
-      elements: [{ ...input.state.elements[0]!, value: "x".repeat(10_000) }],
-    },
+    state: { ...input.state, elements: [{ ...input.state.elements[0]!, value: "x".repeat(10_000) }] },
   };
   expect(() => prepareLayaRequest(longField, budget)).toThrow("context limit");
 });
@@ -140,9 +102,7 @@ test("local server validates input, isolates browser origins, and closes its mod
               {
                 type: "choice",
                 choice: keys[0]!,
-                probabilities: Object.fromEntries(
-                  keys.map((key, index) => [key, index === 0 ? 1 : 0]),
-                ),
+                probabilities: Object.fromEntries(keys.map((key, index) => [key, index === 0 ? 1 : 0])),
                 confidence: 1,
                 answer_confidence: 1,
                 rl_agent: { act_probability: 1 },
@@ -162,10 +122,7 @@ test("local server validates input, isolates browser origins, and closes its mod
     expect((await fetch(url + "health")).status).toBe(200);
     expect(calls).toBe(0);
     expect((await fetch(url + "v1/systemone")).status).toBe(401);
-    const headers = {
-      "content-type": "application/json",
-      authorization: "Bearer fixture-key",
-    };
+    const headers = { "content-type": "application/json", authorization: "Bearer fixture-key" };
     expect(
       (
         await fetch(url + "v1/systemone", {
@@ -175,25 +132,11 @@ test("local server validates input, isolates browser origins, and closes its mod
         })
       ).status,
     ).toBe(403);
-    expect(
-      (
-        await fetch(url + "v1/systemone", {
-          method: "POST",
-          headers,
-          body: "{}",
-        })
-      ).status,
-    ).toBe(422);
+    expect((await fetch(url + "v1/systemone", { method: "POST", headers, body: "{}" })).status).toBe(422);
     expect(calls).toBe(0);
-    const response = await fetch(url + "v1/systemone", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input),
-    });
+    const response = await fetch(url + "v1/systemone", { method: "POST", headers, body: JSON.stringify(input) });
     expect(response.status).toBe(200);
-    expect((await response.json()).answers.type_text_target.choice).toBe(
-      "long-stable-target-id",
-    );
+    expect((await response.json()).answers.type_text_target.choice).toBe("long-stable-target-id");
     expect(calls).toBe(1);
   } finally {
     await local.close();
@@ -222,11 +165,7 @@ test("local server has bounded concurrency and preserves model errors", async ()
   };
   const local = startLocalLayaServer(model, { port: 0 });
   const url = String(local.server.url) + "v1/systemone";
-  const options = {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
-  };
+  const options = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) };
   try {
     const first = fetch(url, options);
     await entered;
@@ -245,32 +184,20 @@ test("long pages keep the options that match the step and restore pruned ones at
   const criteria = Object.fromEntries(
     Array.from({ length: 80 }, (_, index) => [
       `e${index}`,
-      {
-        element: `[e${index}] ${index === 70 ? "Search" : "link"}`,
-        role: "link",
-      },
+      { element: `[e${index}] ${index === 70 ? "Search" : "link"}`, role: "link" },
     ]),
   );
   const long = {
     ...input,
-    state: {
-      ...input.state,
-      task: { ...input.state.task, steps: ["a", "b"] },
-    },
+    state: { ...input.state, task: { ...input.state.task, steps: ["a", "b"] } },
     questions: {
-      click_target: {
-        type: "choice",
-        instructions: { goal: "Click Search", operation: "CLICK" },
-        criteria,
-      },
+      click_target: { type: "choice", instructions: { goal: "Click Search", operation: "CLICK" }, criteria },
     },
   };
   const prepared = prepareLayaRequest(long, budget);
   const small = { ...budget, countTokens: () => 5, headMaxLength: 100 };
   const pruned = prepareLayaRequest(long, small);
-  expect(Object.keys(prepared.questions.click_target!.criteria)).toHaveLength(
-    80,
-  );
+  expect(Object.keys(prepared.questions.click_target!.criteria)).toHaveLength(80);
   const kept = Object.keys(pruned.questions.click_target!.criteria);
   expect(kept.length).toBeLessThan(80);
   expect(Object.values(pruned.ids.click_target!)).toContain("e70");
@@ -279,9 +206,7 @@ test("long pages keep the options that match the step and restore pruned ones at
     click_target: {
       type: "choice",
       choice: kept[0]!,
-      probabilities: Object.fromEntries(
-        kept.map((key) => [key, key === kept[0] ? 1 : 0]),
-      ),
+      probabilities: Object.fromEntries(kept.map((key) => [key, key === kept[0] ? 1 : 0])),
       confidence: 1,
     },
   } as never);

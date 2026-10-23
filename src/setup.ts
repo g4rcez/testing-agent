@@ -1,5 +1,4 @@
-export type Manager =
-  "brew" | "apt" | "dnf" | "pacman" | "apk" | "zypper" | "winget";
+export type Manager = "brew" | "apt" | "dnf" | "pacman" | "apk" | "zypper" | "winget";
 
 export type SetupEnv = {
   platform: NodeJS.Platform;
@@ -52,16 +51,10 @@ export function detectEnv(): SetupEnv {
   const has = (command: string) => Boolean(Bun.which(command));
   const platform = process.platform;
   const wanted: Manager[] =
-    platform === "darwin"
-      ? ["brew"]
-      : platform === "win32"
-        ? ["winget"]
-        : ["apt", "dnf", "pacman", "apk", "zypper"];
+    platform === "darwin" ? ["brew"] : platform === "win32" ? ["winget"] : ["apt", "dnf", "pacman", "apk", "zypper"];
   return {
     platform,
-    manager: managers.find(
-      ([name, binary]) => wanted.includes(name) && has(binary),
-    )?.[0],
+    manager: managers.find(([name, binary]) => wanted.includes(name) && has(binary))?.[0],
     root: process.getuid?.() === 0,
     has,
     version(command) {
@@ -75,22 +68,15 @@ export function detectEnv(): SetupEnv {
   };
 }
 
-function packageCommands(
-  env: SetupEnv,
-  packages: Record<Manager, string[]>,
-): string[] {
+function packageCommands(env: SetupEnv, packages: Record<Manager, string[]>): string[] {
   if (!env.manager) return [];
-  const sudo =
-    env.platform === "linux" && !env.root && env.has("sudo") ? "sudo " : "";
+  const sudo = env.platform === "linux" && !env.root && env.has("sudo") ? "sudo " : "";
   const commands = packages[env.manager];
-  return env.manager === "brew" || env.manager === "winget"
-    ? commands
-    : commands.map((command) => sudo + command);
+  return env.manager === "brew" || env.manager === "winget" ? commands : commands.map((command) => sudo + command);
 }
 
 function bunInstall(env: SetupEnv): string[] {
-  if (env.platform === "win32")
-    return ['powershell -c "irm bun.sh/install.ps1 | iex"'];
+  if (env.platform === "win32") return ['powershell -c "irm bun.sh/install.ps1 | iex"'];
   if (env.manager === "brew") return ["brew install oven-sh/bun/bun"];
   return ["curl -fsSL https://bun.sh/install | bash"];
 }
@@ -98,10 +84,7 @@ function bunInstall(env: SetupEnv): string[] {
 /** Builds the ordered install plan for this machine, mirroring the README install section. */
 export function planSetup(env: SetupEnv): SetupStep[] {
   const steps: SetupStep[] = [];
-  const unsupported =
-    env.platform !== "darwin" &&
-    env.platform !== "linux" &&
-    env.platform !== "win32";
+  const unsupported = env.platform !== "darwin" && env.platform !== "linux" && env.platform !== "win32";
   const noManager = !env.manager && !unsupported;
 
   if (env.platform === "darwin" && !env.manager)
@@ -109,26 +92,15 @@ export function planSetup(env: SetupEnv): SetupStep[] {
       name: "Homebrew",
       reason: "installs the other tools on macOS",
       present: false,
-      commands: [
-        '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
-      ],
+      commands: ['/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'],
     });
   const brew = env.platform === "darwin" && !env.manager;
-  const system = (
-    name: string,
-    reason: string,
-    present: boolean,
-    packages: Record<Manager, string[]>,
-  ): SetupStep => ({
+  const system = (name: string, reason: string, present: boolean, packages: Record<Manager, string[]>): SetupStep => ({
     name,
     reason,
     present,
-    commands: brew
-      ? packageCommands({ ...env, manager: "brew" }, packages)
-      : packageCommands(env, packages),
-    ...(!present && noManager
-      ? { note: `Install ${name} with your system package manager.` }
-      : {}),
+    commands: brew ? packageCommands({ ...env, manager: "brew" }, packages) : packageCommands(env, packages),
+    ...(!present && noManager ? { note: `Install ${name} with your system package manager.` } : {}),
   });
 
   const bunOk = env.has("bun") && atLeast(semver(env.version("bun")), MIN_BUN);
@@ -139,8 +111,7 @@ export function planSetup(env: SetupEnv): SetupStep[] {
     commands: env.has("bun") && !bunOk ? ["bun upgrade"] : bunInstall(env),
   });
 
-  const nodeOk =
-    env.has("node") && (semver(env.version("node"))[0] ?? 0) >= MIN_NODE;
+  const nodeOk = env.has("node") && (semver(env.version("node"))[0] ?? 0) >= MIN_NODE;
   steps.push(
     system("Node.js 20+", "installs agent-browser through npm", nodeOk, {
       brew: ["brew install node"],
@@ -176,11 +147,7 @@ export function planSetup(env: SetupEnv): SetupStep[] {
     name: "Chrome for agent-browser",
     reason: "the browser the tests run on",
     present: false,
-    commands: [
-      env.platform === "linux"
-        ? "agent-browser install --with-deps"
-        : "agent-browser install",
-    ],
+    commands: [env.platform === "linux" ? "agent-browser install --with-deps" : "agent-browser install"],
   });
   return steps;
 }
@@ -195,37 +162,25 @@ export function formatManual(steps: SetupStep[], env: SetupEnv): string {
     if (step.commands.length) lines.push(...step.commands);
     else lines.push(`# ${step.note}`);
   }
-  lines.push(
-    "",
-    "# Optional local Laya backend (about 1.7 GB model download):",
-    "testing-agent setup laya",
-  );
+  lines.push("", "# Optional local Laya backend (about 1.7 GB model download):", "testing-agent setup laya");
   return lines.join("\n");
 }
 
-export type SetupResult = {
-  installed: string[];
-  skipped: string[];
-  failed?: string;
-};
+export type SetupResult = { installed: string[]; skipped: string[]; failed?: string };
 
 export async function runSetup(
   env: SetupEnv,
-  options: {
-    log?: (line: string) => void;
-    exec?: (command: string) => Promise<number>;
-  } = {},
+  options: { log?: (line: string) => void; exec?: (command: string) => Promise<number> } = {},
 ): Promise<SetupResult> {
   const log = options.log ?? ((line) => console.log(line));
   const exec =
     options.exec ??
     (async (command: string) => {
-      const child = Bun.spawn(
-        env.platform === "win32"
-          ? ["cmd", "/c", command]
-          : ["sh", "-c", command],
-        { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-      );
+      const child = Bun.spawn(env.platform === "win32" ? ["cmd", "/c", command] : ["sh", "-c", command], {
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+      });
       return child.exited;
     });
   const result: SetupResult = { installed: [], skipped: [] };

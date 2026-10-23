@@ -26,9 +26,7 @@
   <main>
     <h1>Find a stay</h1>
     <form id="search">
-      <label
-        >Destination <input name="destination" aria-label="Destination"
-      /></label>
+      <label>Destination <input name="destination" aria-label="Destination" /></label>
       <label
         >Category
         <select name="category" aria-label="Category">
@@ -37,9 +35,7 @@
           <option>Nature</option>
         </select></label
       >
-      <label
-        ><input type="checkbox" name="cancellation" /> Free cancellation</label
-      >
+      <label><input type="checkbox" name="cancellation" /> Free cancellation</label>
       <button>Find stays</button>
     </form>
     <section id="results" aria-live="polite"></section>
@@ -50,9 +46,7 @@
       event.preventDefault();
       const fields = new FormData(form);
       const valid =
-        fields.get("destination") === "Lisbon" &&
-        fields.get("category") === "Design" &&
-        fields.has("cancellation");
+        fields.get("destination") === "Lisbon" && fields.get("category") === "Design" && fields.has("cancellation");
       const results = document.getElementById("results");
       results.replaceChildren();
       const message = document.createElement("p");

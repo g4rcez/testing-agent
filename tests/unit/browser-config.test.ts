@@ -14,19 +14,13 @@ test("passes browser options and environment without a shell or changing parent 
     executable,
     `#!/usr/bin/env bun\nconsole.log(JSON.stringify({success:true,data:{args:process.argv.slice(2),headed:process.env.AGENT_BROWSER_HEADED,inherited:process.env.JEV_CONFIG_TEST}}));\n`,
   );
-  await import("node:fs/promises").then(({ chmod }) =>
-    chmod(executable, 0o700),
-  );
+  await import("node:fs/promises").then(({ chmod }) => chmod(executable, 0o700));
   const previous = process.env.AGENT_BROWSER_BIN;
   process.env.AGENT_BROWSER_BIN = executable;
   process.env.JEV_CONFIG_TEST = "inherited";
   try {
     const browser = new Browser("config-test", Date.now() + 5000, undefined, {
-      args: {
-        headed: false,
-        "color-scheme": "dark",
-        extension: ["one", "two"],
-      },
+      args: { headed: false, "color-scheme": "dark", extension: ["one", "two"] },
       env: { AGENT_BROWSER_HEADED: "true" },
     });
     expect(await browser.command(["open", "https://example.com"])).toEqual({
@@ -64,13 +58,8 @@ test("validates browser settings and rejects reserved flags and non-browser envi
     expect: [{ text: "Done" }],
   };
   expect(
-    runSchema.parse({
-      ...base,
-      browser: {
-        args: { headed: true },
-        env: { AGENT_BROWSER_COLOR_SCHEME: "dark" },
-      },
-    }).browser,
+    runSchema.parse({ ...base, browser: { args: { headed: true }, env: { AGENT_BROWSER_COLOR_SCHEME: "dark" } } })
+      .browser,
   ).toBeDefined();
   for (const browser of [
     { args: { session: "other" } },

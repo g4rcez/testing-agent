@@ -4,26 +4,16 @@ import type { Decision, Observation } from "../../src/contracts.ts";
 
 let browser: Browser;
 beforeEach(async () => {
-  browser = new Browser(
-    `jev-guard-${crypto.randomUUID()}`,
-    Date.now() + 20_000,
-  );
+  browser = new Browser(`jev-guard-${crypto.randomUUID()}`, Date.now() + 20_000);
   await browser.command(["open", new URL("./app.html", import.meta.url).href]);
 }, 15_000);
 afterEach(async () => {
   await new Browser(browser.session, Date.now() + 12_000).command(["close"]);
 }, 15_000);
 
-function choice(
-  observed: Observation,
-  operation: string,
-  label: string,
-): Decision {
-  const selected = Object.entries(observed.targets[operation] ?? {}).find(
-    ([, target]) => target.label === label,
-  );
-  if (!selected || !observed.snapshotId)
-    throw new Error(`Missing observed ${label}`);
+function choice(observed: Observation, operation: string, label: string): Decision {
+  const selected = Object.entries(observed.targets[operation] ?? {}).find(([, target]) => target.label === label);
+  if (!selected || !observed.snapshotId) throw new Error(`Missing observed ${label}`);
   return {
     operation,
     targetId: selected[0],
@@ -36,23 +26,11 @@ function choice(
 
 test("observes native options and checkbox states without treating select as text input", async () => {
   const observed = await browser.observe();
-  expect(choice(observed, "SELECT", "Category → Design").target?.value).toBe(
-    "Design",
-  );
-  expect(choice(observed, "CLICK", "Free cancellation").target?.checked).toBe(
-    "false",
-  );
-  expect(
-    Object.values(observed.targets.TYPE_TEXT ?? {}).some(
-      (target) => target.label === "Category",
-    ),
-  ).toBe(false);
+  expect(choice(observed, "SELECT", "Category → Design").target?.value).toBe("Design");
+  expect(choice(observed, "CLICK", "Free cancellation").target?.checked).toBe("false");
+  expect(Object.values(observed.targets.TYPE_TEXT ?? {}).some((target) => target.label === "Category")).toBe(false);
   await browser.execute(choice(observed, "TYPE_TEXT", "Destination"), "Lisbon");
-  expect(
-    (await browser.observe()).elements.find(
-      (element) => element.label === "Destination",
-    )?.value,
-  ).toBe("Lisbon");
+  expect((await browser.observe()).elements.find((element) => element.label === "Destination")?.value).toBe("Lisbon");
 });
 
 test("types and presses Enter through an accessible DOM terminal without redirecting replaced input", async () => {
@@ -61,35 +39,19 @@ test("types and presses Enter through an accessible DOM terminal without redirec
     '(() => { document.body.innerHTML=`<div role="group" aria-roledescription="terminal" aria-label="Command terminal" style="position:relative;width:600px;height:300px"><div id="output">Ready</div><textarea aria-label="Command terminal" style="opacity:0;pointer-events:none;position:absolute;width:1px;height:1px"></textarea></div>`; const input=document.querySelector("textarea"); let command=""; input.addEventListener("input",()=>{command+=input.value;input.value="";document.querySelector("#output").textContent=command;}); input.addEventListener("keydown",event=>{if(event.key==="Enter")document.querySelector("#output").textContent=command==="ls"?"README.md agents.ts posts projects skills.ts tags":"Wrong command";}); })()',
   ]);
   let observed = await browser.observe();
-  await browser.execute(
-    choice(observed, "TYPE_TEXT", "Command terminal"),
-    "ls",
-  );
+  await browser.execute(choice(observed, "TYPE_TEXT", "Command terminal"), "ls");
   observed = await browser.observe();
   const submit = choice(observed, "PRESS_ENTER", "Command terminal");
   await browser.execute(submit);
   expect(
-    (
-      await browser.assert([
-        {
-          text: "README.md agents.ts posts projects skills.ts tags",
-          timeoutMs: 0,
-        },
-      ])
-    ).passed,
+    (await browser.assert([{ text: "README.md agents.ts posts projects skills.ts tags", timeoutMs: 0 }])).passed,
   ).toBe(true);
-  const stale = choice(
-    await browser.observe(),
-    "TYPE_TEXT",
-    "Command terminal",
-  );
+  const stale = choice(await browser.observe(), "TYPE_TEXT", "Command terminal");
   await browser.command([
     "eval",
     '(() => { const input=document.querySelector("textarea"); input.replaceWith(input.cloneNode(true)); })()',
   ]);
-  await expect(browser.execute(stale, "unexpected")).rejects.toBeInstanceOf(
-    StaleDecisionError,
-  );
+  await expect(browser.execute(stale, "unexpected")).rejects.toBeInstanceOf(StaleDecisionError);
 });
 
 test("rejects a same-label replacement node at dispatch", async () => {
@@ -99,15 +61,8 @@ test("rejects a same-label replacement node at dispatch", async () => {
     "eval",
     '(() => { const node = document.querySelector("button"); const replacement = node.cloneNode(true); replacement.type="button"; replacement.onclick=()=>document.body.dataset.replacementClicked="yes"; node.replaceWith(replacement); })()',
   ]);
-  await expect(browser.execute(selected)).rejects.toBeInstanceOf(
-    StaleDecisionError,
-  );
-  expect(
-    await browser.command([
-      "eval",
-      'document.body.dataset.replacementClicked ?? "no"',
-    ]),
-  ).toMatchObject({
+  await expect(browser.execute(selected)).rejects.toBeInstanceOf(StaleDecisionError);
+  expect(await browser.command(["eval", 'document.body.dataset.replacementClicked ?? "no"'])).toMatchObject({
     result: "no",
     origin: new URL("./app.html", import.meta.url).href,
   });
@@ -119,20 +74,13 @@ test("rejects input covered by an overlay", async () => {
     "eval",
     '(() => { const overlay=document.createElement("div"); overlay.style="position:fixed;inset:0;z-index:999999;background:white"; document.body.append(overlay); })()',
   ]);
-  await expect(browser.execute(selected)).rejects.toBeInstanceOf(
-    StaleDecisionError,
-  );
+  await expect(browser.execute(selected)).rejects.toBeInstanceOf(StaleDecisionError);
 });
 
 test("rejects changed form values after a decision", async () => {
   const selected = choice(await browser.observe(), "CLICK", "Find stays");
-  await browser.command([
-    "eval",
-    'document.querySelector("input").value="changed"',
-  ]);
-  await expect(browser.execute(selected)).rejects.toBeInstanceOf(
-    StaleDecisionError,
-  );
+  await browser.command(["eval", 'document.querySelector("input").value="changed"']);
+  await expect(browser.execute(selected)).rejects.toBeInstanceOf(StaleDecisionError);
 });
 
 test("selects the observed option when options share a value", async () => {
@@ -140,14 +88,9 @@ test("selects the observed option when options share a value", async () => {
     "eval",
     '(() => { const options=document.querySelector("select").options; options[1].value="shared"; options[2].value="shared"; })()',
   ]);
-  await browser.execute(
-    choice(await browser.observe(), "SELECT", "Category → Nature"),
-  );
+  await browser.execute(choice(await browser.observe(), "SELECT", "Category → Nature"));
   expect(
-    await browser.command([
-      "eval",
-      'document.querySelector("select").selectedOptions[0].textContent',
-    ]),
+    await browser.command(["eval", 'document.querySelector("select").selectedOptions[0].textContent']),
   ).toMatchObject({ result: "Nature" });
 });
 
@@ -157,11 +100,7 @@ for (const mutation of ["swap-values", "replace-option", "disable-group"]) {
       "eval",
       '(() => { const select=document.querySelector("select"); select.innerHTML="<option>All</option><optgroup label=Styles><option value=Design>Design</option><option value=Nature>Nature</option></optgroup>"; document.body.dataset.events="0"; for(const type of ["input","change"]) select.addEventListener(type,()=>document.body.dataset.events=String(Number(document.body.dataset.events)+1)); })()',
     ]);
-    const selected = choice(
-      await browser.observe(),
-      "SELECT",
-      "Category → Design",
-    );
+    const selected = choice(await browser.observe(), "SELECT", "Category → Design");
     const script =
       mutation === "swap-values"
         ? 'const options=document.querySelector("select").options; options[1].value="Nature"; options[2].value="Design";'
@@ -169,9 +108,7 @@ for (const mutation of ["swap-values", "replace-option", "disable-group"]) {
           ? 'const option=document.querySelector("select").options[1]; option.replaceWith(option.cloneNode(true));'
           : 'document.querySelector("optgroup").disabled=true;';
     await browser.command(["eval", `(() => { ${script} })()`]);
-    await expect(browser.execute(selected)).rejects.toBeInstanceOf(
-      StaleDecisionError,
-    );
+    await expect(browser.execute(selected)).rejects.toBeInstanceOf(StaleDecisionError);
     expect(
       await browser.command([
         "eval",
@@ -190,26 +127,16 @@ test("an acknowledged action id cannot execute twice", async () => {
   await browser.execute(selected);
   await browser.execute(selected);
   expect(await browser.receipt(selected.actionId ?? "")).toBe("executed");
-  const result = await browser.command([
-    "eval",
-    "document.body.dataset.clicks",
-  ]);
+  const result = await browser.command(["eval", "document.body.dataset.clicks"]);
   expect(result).toMatchObject({ result: "1" });
 });
 
 test("an explicit test binding prevents typing into a different selected field", async () => {
   const selected = choice(await browser.observe(), "TYPE_TEXT", "Destination");
   await expect(
-    browser.execute(
-      { ...selected, expectedSelector: "#another-field" },
-      "fixture-secret",
-    ),
+    browser.execute({ ...selected, expectedSelector: "#another-field" }, "fixture-secret"),
   ).rejects.toBeInstanceOf(StaleDecisionError);
-  expect(
-    (await browser.observe()).elements.find(
-      (element) => element.label === "Destination",
-    )?.value,
-  ).toBe("");
+  expect((await browser.observe()).elements.find((element) => element.label === "Destination")?.value).toBe("");
 });
 
 test("password contents stay out of model observations", async () => {
@@ -217,31 +144,15 @@ test("password contents stay out of model observations", async () => {
     "eval",
     '(() => { const input=document.querySelector("input"); input.type="password"; input.value="fixture-secret"; })()',
   ]);
-  expect(JSON.stringify(await browser.observe())).not.toContain(
-    "fixture-secret",
-  );
+  expect(JSON.stringify(await browser.observe())).not.toContain("fixture-secret");
 });
 
 test("deterministic assertions check real form values and fail absent outcomes", async () => {
   const observed = await browser.observe();
   await browser.execute(choice(observed, "SELECT", "Category → Design"));
-  expect(
-    (
-      await browser.assert([
-        { selector: "[name=category]", value: "Design", timeoutMs: 0 },
-      ])
-    ).passed,
-  ).toBe(true);
-  expect(
-    (await browser.assert([{ text: "Never rendered", timeoutMs: 0 }])).passed,
-  ).toBe(false);
-  expect(
-    (
-      await browser.assert([
-        { selector: "#not-present", count: 0, timeoutMs: 0 },
-      ])
-    ).passed,
-  ).toBe(true);
+  expect((await browser.assert([{ selector: "[name=category]", value: "Design", timeoutMs: 0 }])).passed).toBe(true);
+  expect((await browser.assert([{ text: "Never rendered", timeoutMs: 0 }])).passed).toBe(false);
+  expect((await browser.assert([{ selector: "#not-present", count: 0, timeoutMs: 0 }])).passed).toBe(true);
 });
 
 test("ARIA checkboxes and open shadow-root buttons are executable", async () => {
@@ -251,13 +162,7 @@ test("ARIA checkboxes and open shadow-root buttons are executable", async () => 
   ]);
   let observed = await browser.observe();
   await browser.execute(choice(observed, "CLICK", "Enable custom"));
-  expect(
-    (
-      await browser.assert([
-        { selector: "[role=checkbox]", checked: true, timeoutMs: 0 },
-      ])
-    ).passed,
-  ).toBe(true);
+  expect((await browser.assert([{ selector: "[role=checkbox]", checked: true, timeoutMs: 0 }])).passed).toBe(true);
   observed = await browser.observe();
   await browser.execute(choice(observed, "CLICK", "Save shadow"));
   expect((await browser.observe()).text).toContain("Saved shadow");
