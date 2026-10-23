@@ -31,8 +31,8 @@
     "format:check": "prettier --check src tests scripts package.json tsconfig.json agent-browser.json",
     "test:package": "bun run scripts/package-smoke.ts",
     "test:live": "bun run scripts/live.ts",
-    "demo:garcez": "bun run build && bun run scripts/demo-garcez.ts",
-    "demo:github": "bun run build && bun run scripts/demo-garcez.ts --workflow github",
+    "demo:wikipedia": "bun run build && bun run scripts/demo.ts",
+    "demo:github": "bun run build && bun run scripts/demo.ts --workflow github",
     "check": "bun run typecheck && bun run format:check && bun run build && bun test && bun run test:package",
     "prepack": "bun run build"
   },

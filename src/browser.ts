@@ -111,10 +111,26 @@ export class Browser {
       .result;
   }
 
+  // A page that is still navigating can fail the first read; retry briefly.
+  private async observeWithRetry(): Promise<unknown> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.evaluate({ type: "observe" });
+      } catch (error) {
+        if (
+          attempt >= 3 ||
+          this.signal?.aborted ||
+          error instanceof BrowserDeadlineError ||
+          this.deadline - Date.now() < 3000
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+  }
+
   async observe(): Promise<Observation> {
-    const result = observationSchema.parse(
-      await this.evaluate({ type: "observe" }),
-    );
+    const result = observationSchema.parse(await this.observeWithRetry());
     const { snapshotId, ...semantic } = result;
     return {
       ...result,

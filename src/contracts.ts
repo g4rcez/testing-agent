@@ -58,6 +58,7 @@ export const stepSchema = z
     instruction: text,
     value: z.string().max(2000).optional(),
     valueFromEnv: envName.optional(),
+    assume: text.optional(),
     selector: z.string().min(1).max(1000).optional(),
     expect: assertionSchema.optional(),
   })

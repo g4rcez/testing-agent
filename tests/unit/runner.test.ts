@@ -201,7 +201,7 @@ test("cancellation during video startup preserves cancelled status and cleans th
               ),
             );
             await Bun.write(
-              join(directory, basename(args[2], ".webm") + ".cancel"),
+              join(directory, basename(args[2], ".mp4") + ".cancel"),
               "1",
             );
             return aborted;
@@ -234,7 +234,7 @@ test("an acknowledged video start remains eligible for cleanup when persistence 
         command: async (args) => {
           commands.push(args);
           if (args[1] === "start" && args[2]) {
-            savedPath = join(directory, basename(args[2], ".webm") + ".json");
+            savedPath = join(directory, basename(args[2], ".mp4") + ".json");
             await rename(savedPath, savedPath + ".backup");
             await mkdir(savedPath);
           } else if (args[1] === "stop") {
@@ -511,3 +511,47 @@ for (const kind of ["call", "total"] as const) {
     );
   }, 5000);
 }
+
+test("a step completes once the model confirms its assumption about the page", async () => {
+  let typed = false;
+  const asked: string[] = [];
+  const dependencies: RunnerDependencies = {
+    browser: () => ({
+      command: async () => ({}),
+      observe: async () => observed(typed ? "typed" : "empty"),
+      execute: async () => {
+        typed = true;
+      },
+    }),
+    decide: async () => decision("TYPE_TEXT"),
+    fieldValue: async () => "IPv6",
+    assume: async (run, index) => {
+      asked.push(run.steps[index]!.assume!);
+      return true;
+    },
+  };
+  const state = await startRun(
+    runSchema.parse({
+      prompt: "Search",
+      steps: [
+        {
+          instruction: "Type IPv6 into the search box",
+          value: "IPv6",
+          assume: "The search box contains IPv6",
+        },
+      ],
+      backend: { provider: "laya" },
+      session: "unit",
+      expect: [{ text: "App", timeoutMs: 0 }],
+    }),
+    dependencies,
+  );
+  expect(asked).toEqual(["The search box contains IPv6"]);
+  expect(state.completedSteps).toEqual([
+    {
+      instruction: "Type IPv6 into the search box",
+      verification: "assumption",
+    },
+  ]);
+  expect(state.status).toBe("completed");
+});

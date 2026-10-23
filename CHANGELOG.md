@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Record test videos as MP4 (H.264) instead of WebM.
+- Add `testing-agent setup [--manual]` to install missing dependencies per OS, and `testing-agent init [folder] [--yaml|--json]` to scaffold a tests folder.
+- Replace the personal-site examples with one Wikipedia search flow (LLMs, IPv4, IPv6 and Spider-Man) that passes 8 of 8 steps on the local Laya backend, with a recorded GIF and receipt.
+- Local Laya: fit long pages into the model's small window by pruning click targets to those matching the step and shedding the step list when needed; send only the current step's actions as history.
+- Add `assume`: a plain-language statement about the page that completes a step when the model confirms it and the page shows its distinctive words, so flows need no selectors.
+- Retry a page observation that fails while the page is still navigating.
+
 ## 0.0.2 — testing-agent
 
 - Rename the npm package and GitHub repository to `testing-agent` without resetting the existing release history.

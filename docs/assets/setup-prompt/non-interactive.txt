@@ -1,2 +1,0 @@
-{"error":"laya backend is not reachable; no browser was started","setup":"Start the optional local backend with: testing-agent setup laya. Or start the existing Python service with: uv run tools/laya-server.py. Setup: https://github.com/receptron/laya. Then retry the test."}
-exit=1

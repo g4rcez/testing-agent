@@ -1,0 +1,34 @@
+name: Search Wikipedia for LLMs, IPv4, IPv6 and Spider-Man
+url: https://en.wikipedia.org/wiki/Main_Page
+prompt: Search Wikipedia for four topics, one after another, and check that each article opens.
+backend:
+  provider: laya
+steps:
+  - instruction: Type Large language model into the Search Wikipedia box
+    value: Large language model
+    assume: The Search Wikipedia box contains Large language model
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/Large_language_model
+      text: Large language model
+  - instruction: Type IPv4 into the Search Wikipedia box
+    value: IPv4
+    assume: The Search Wikipedia box contains IPv4
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/IPv4
+      text: Internet Protocol version 4
+  - instruction: Type IPv6 into the Search Wikipedia box
+    value: IPv6
+    assume: The Search Wikipedia box contains IPv6
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/IPv6
+      text: Internet Protocol version 6
+  - instruction: Type Spider-Man into the Search Wikipedia box
+    value: Spider-Man
+    assume: The Search Wikipedia box contains Spider-Man
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/Spider-Man
+      text: Spider-Man

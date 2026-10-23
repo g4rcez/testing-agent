@@ -107,6 +107,49 @@ function stateRoom(
   );
 }
 
+// Long pages offer more targets than the model's option window holds. Keep the
+// ones that share the most words with the current step, in page order.
+function pruneOptions(
+  asked: z.infer<typeof requestSchema>["questions"],
+  questions: Record<string, ChoiceQuestion>,
+  kept: Record<string, string[]>,
+  budget: LayaTokenBudget,
+): void {
+  const count = (text: string) =>
+    budget.countTokens(text.replaceAll("[MASK]", " "));
+  for (const [name, question] of Object.entries(questions)) {
+    const entries = Object.entries(question.criteria);
+    const room =
+      budget.headMaxLength -
+      16 -
+      count(`choice question: ${question.instructions}`);
+    const cap = Math.max(1, Math.floor(room / 5));
+    if (entries.length <= cap) continue;
+    const source = asked[name]?.instructions;
+    const goal = (typeof source === "string" ? source : (source?.goal ?? ""))
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length > 2);
+    const score = (description: string) =>
+      goal.filter((word) => description.toLowerCase().includes(word)).length;
+    const keep = new Set(
+      entries
+        .map(([key, description], index) => ({
+          key,
+          index,
+          score: score(String(description)),
+        }))
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .slice(0, cap)
+        .map((item) => item.key),
+    );
+    question.criteria = Object.fromEntries(
+      entries.filter(([key]) => keep.has(key)),
+    );
+    kept[name] = Object.keys(question.criteria);
+  }
+}
+
 export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
   const parsed = requestSchema.parse(input);
   const ids: Record<string, Record<string, string>> = {};
@@ -139,6 +182,8 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
       ),
     };
   }
+  const kept: Record<string, string[]> = {};
+  if (budget) pruneOptions(parsed.questions, questions, kept, budget);
   const fields = parsed.state.elements
     .filter((element) =>
       element.operations.some((operation) =>
@@ -174,6 +219,18 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
     const room = stateRoom(questions, budget);
     const fits = () =>
       budget.countTokens(spacedJson(state).replaceAll("[MASK]", " ")) <= room;
+    // The model window is small: shed the full step list, then the long rules,
+    // keeping the current step, which is all the model acts on.
+    if (!fits() && Array.isArray(state.task.steps))
+      state.task = { ...state.task, steps: [state.current_step] };
+    if (!fits())
+      state.instructions = state.instructions.map((item) =>
+        item && typeof item === "object"
+          ? Object.fromEntries(
+              Object.entries(item).filter(([key]) => key !== "rules"),
+            )
+          : item,
+      );
     if (!fits())
       throw new Error(
         "Local Laya task and observed field/history state exceed the model context limit",
@@ -195,7 +252,7 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
         "Local Laya page context exceeds the model context limit",
       );
   } else state.page.text = parsed.state.page.text;
-  return { state, questions, ids };
+  return { state, questions, ids, kept };
 }
 
 export function restoreLayaAnswers(
@@ -205,16 +262,17 @@ export function restoreLayaAnswers(
   return Object.fromEntries(
     Object.entries(prepared.ids).map(([name, ids]) => {
       const answer = answers[name]!;
-      validateChoice(answer, Object.keys(ids));
+      validateChoice(answer, prepared.kept[name] ?? Object.keys(ids));
       return [
         name,
         {
           ...answer,
           choice: ids[answer.choice]!,
+          // Options pruned to fit the model window were never offered: probability 0.
           probabilities: Object.fromEntries(
-            Object.entries(answer.probabilities).map(([key, probability]) => [
-              ids[key]!,
-              probability,
+            Object.entries(ids).map(([key, original]) => [
+              original,
+              answer.probabilities[key] ?? 0,
             ]),
           ),
         },

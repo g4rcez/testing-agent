@@ -13,7 +13,7 @@ test("demo setup failure still prints its owned browser session and close comman
       [
         process.execPath,
         "run",
-        join(import.meta.dir, "../../scripts/demo-garcez.ts"),
+        join(import.meta.dir, "../../scripts/demo.ts"),
         "--workflow",
         "github",
       ],

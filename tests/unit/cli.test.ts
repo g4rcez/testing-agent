@@ -69,7 +69,7 @@ describe("CLI test definitions", () => {
     );
   });
 
-  test("README first test matches the three checked blog steps", async () => {
+  test("README first test matches the Wikipedia example", async () => {
     const readme = await Bun.file("README.md").text();
     const firstTest = readme
       .split("## First test\n")[1]
@@ -77,20 +77,18 @@ describe("CLI test definitions", () => {
     const snippet = firstTest?.match(/```yaml\n([\s\S]*?)```/)?.[1];
     expect(snippet).toBeDefined();
     const example = Bun.YAML.parse(
-      await Bun.file("examples/garcez-blog.yaml").text(),
+      await Bun.file("examples/wikipedia-search.yaml").text(),
     );
     expect(Bun.YAML.parse(snippet!)).toEqual(example);
     const input = runSchema.parse(example);
-    expect(input.steps).toHaveLength(3);
-    expect(
-      input.steps.every((step) => step.expect?.url && step.expect?.text),
-    ).toBe(true);
-    expect(JSON.stringify(input)).not.toContain('"selector"');
-    expect(firstTest).toContain("testing-agent test blog.test.yaml");
+    expect(input.steps).toHaveLength(8);
+    expect(input.steps.filter((step) => step.expect)).toHaveLength(4);
+    expect(JSON.stringify(input)).not.toContain("selector");
+    expect(firstTest).toContain("testing-agent test wikipedia-search.yaml");
   });
 
   test("ships equivalent JSON/YAML examples and valid GitHub definitions", async () => {
-    for (const name of ["garcez-ls", "stay-search"]) {
+    for (const name of ["stay-search"]) {
       const json = await Bun.file(`examples/${name}.json`).json();
       const yaml = Bun.YAML.parse(
         await Bun.file(`examples/${name}.yaml`).text(),
@@ -217,7 +215,7 @@ console.log(JSON.stringify({success:true,data}));
       },
     ]);
     expect(result.video.status).toBe("saved");
-    expect(result.video.path.endsWith(".webm")).toBe(true);
+    expect(result.video.path.endsWith(".mp4")).toBe(true);
     const commands = (await Bun.file(log).text())
       .trim()
       .split("\n")

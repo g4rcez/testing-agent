@@ -1,6 +1,6 @@
 # testing-agent reference
 
-Start with the [three-step first test](../README.md#first-test).
+Start with the [Wikipedia first test](../README.md#first-test).
 
 ## From source
 
@@ -14,7 +14,7 @@ bunx --no-install agent-browser install
 In another terminal:
 
 ```sh
-./bin/testing-agent test examples/garcez-blog.yaml
+./bin/testing-agent test examples/wikipedia-search.yaml
 ```
 
 Bun 1.3.14+, Node.js 20+, Chrome, agent-browser, and ffmpeg are required. Run `testing-agent setup` to install missing tools for your OS (Homebrew, apt/dnf/pacman/apk/zypper, or winget); `testing-agent setup --manual` only prints the commands. The optional Node Laya backend needs no Python. Its model weights are downloaded only by explicit setup, not by a test command. Use `ONNXRUNTIME_NODE_INSTALL=skip` with npm installation to skip unused CUDA downloads; the backend uses CPU inference.
@@ -66,16 +66,16 @@ Only run trusted definitions: browser settings can load profiles, extensions, sc
 
 The CLI automatically resumes paused calls and prints one JSON result. It writes JSON/JUnit reports and returns:
 
-| Exit code | Meaning |
-| --- | --- |
-| `0` | Passed |
-| `1` | Failed, blocked, or uncertain |
-| `2` | Invalid input |
-| `130` | Cancelled |
+| Exit code | Meaning                       |
+| --------- | ----------------------------- |
+| `0`       | Passed                        |
+| `1`       | Failed, blocked, or uncertain |
+| `2`       | Invalid input                 |
+| `130`     | Cancelled                     |
 
 Results contain `steps`, `passed`, final `assertions`, `reason`, `video`, elapsed time, actions, and report paths. Steps expose `status`, `success`, and whether verification used an `assertion` or the `model`. Model verification is not independent proof; add an `expect` for important outcomes. Unvisited steps are skipped. Final assertions can fail even if every step passed.
 
-CLI runs record WebM by default and require ffmpeg. Videos live in `.agent-browser-jev/videos/<run-id>.webm`, or under `JEV_STATE_DIR`. Recording spans pauses and is finalized on terminal completion. Recording failure prevents success. A separate bounded 12-second cleanup budget applies even after cancellation/deadline. `--report-dir` changes report paths, not video paths. Plugin runs record only with `recordVideo: true`.
+CLI runs record MP4 (H.264) by default and require ffmpeg. Videos live in `.agent-browser-jev/videos/<run-id>.mp4`, or under `JEV_STATE_DIR`. Recording spans pauses and is finalized on terminal completion. Recording failure prevents success. A separate bounded 12-second cleanup budget applies even after cancellation/deadline. `--report-dir` changes report paths, not video paths. Plugin runs record only with `recordVideo: true`.
 
 State, reports, and videos persist; remove them when no longer needed. Never mutate a session concurrently with a test. Abrupt termination cannot finalize video. Recovery reconciles receipts but does not resume input after recording has ended; start a new test for a complete video. Close only your own sessions:
 
@@ -85,10 +85,10 @@ agent-browser --session YOUR_SESSION close
 
 ## Decision backends
 
-| Backend | Default endpoint | Credential |
-| --- | --- | --- |
-| Laya | `http://127.0.0.1:8791` or `LAYA_BASE_URL` | Optional `LAYA_API_KEY` |
-| Jev | `https://api.typesafe.ai` or `TYPESAFE_BASE_URL` | `TYPESAFE_API_KEY` |
+| Backend | Default endpoint                                 | Credential              |
+| ------- | ------------------------------------------------ | ----------------------- |
+| Laya    | `http://127.0.0.1:8791` or `LAYA_BASE_URL`       | Optional `LAYA_API_KEY` |
+| Jev     | `https://api.typesafe.ai` or `TYPESAFE_BASE_URL` | `TYPESAFE_API_KEY`      |
 
 Both use POST `/v1/systemone`. Override `backend.baseUrl`, `backend.model`, or `backend.apiKeyEnv` in the definition. There is no automatic provider switch. Jev defaults to `jev-latest`; pin a model for reproducibility.
 
@@ -148,13 +148,11 @@ Defaults: `maxActions: 60`, `maxStepDecisions: 20`, `actionsPerCall: 20`, per-ca
 
 ## Existing recordings and development checks
 
-The [About receipt](evidence/garcez-about.json) and [video](assets/garcez-about.webm) show a real **passing** source CLI run with the optional Node Laya backend. It took three model-selected clicks, including opening and closing the terminal, before About. Both URL and page-text assertions passed. It does not prove the terminal workflow below passes.
+The [Wikipedia receipt](evidence/wikipedia-search.json) and [video](assets/wikipedia-search.mp4) show a real **passing** source CLI run with the optional Node Laya backend: 8 of 8 steps, one model decision each, with URL and page-text assertions after every search, `assume` checks after each typing step, and no selectors.
 
-The [three-step blog receipt](evidence/garcez-blog.json) and [video](assets/garcez-blog.webm) show a real **blocked** local Laya attempt against the current definition. Its assertions were not weakened to produce a pass.
+The older [signed-out GitHub GIF](assets/github-star-sign-in.gif) is historical real-model evidence. Its receipt is in `docs/evidence/`; it does not verify the current definition or renamed repository. The signed-out GitHub demo reaches sign-in, not a successful star. Never record credential entry.
 
-The older [terminal GIF](assets/garcez-ls.gif) and [signed-out GitHub GIF](assets/github-star-sign-in.gif) are historical real-model evidence. Their receipts are in `docs/evidence/`; they do not verify the current definitions or renamed repository. The signed-out GitHub demo reaches sign-in, not a successful star. Never record credential entry.
-
-With the local backend running, `bun run demo:garcez -- --record` and `bun run demo:github -- --record` run the source demos and capture real screenshot frames. These helpers leave their named browser open and print a close command. The authenticated Star example changes account state and has not been live-verified.
+With the local backend running, `bun run demo:wikipedia -- --record` and `bun run demo:github -- --record` run the source demos and capture real screenshot frames. These helpers leave their named browser open and print a close command. The authenticated Star example changes account state and has not been live-verified.
 
 ```sh
 bun run check

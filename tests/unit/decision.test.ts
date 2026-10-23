@@ -57,3 +57,43 @@ test("rejects invented targets and invalid probability distributions", () => {
     ).choice,
   ).toBe("e1");
 });
+
+test("only the current step's actions are sent as recent actions", () => {
+  const input = runSchema.parse({
+    prompt: "Search",
+    steps: ["Type", "Click Search"],
+    session: "test",
+    expect: [{ text: "App" }],
+    backend: { provider: "laya" },
+  });
+  const request = makeRequest(input, 1, observation, [
+    { operation: "TYPE_TEXT", target: "Old", stepIndex: 0 },
+    { operation: "CLICK", target: "Now", stepIndex: 1 },
+  ]);
+  expect(request.state.recent_actions).toEqual([
+    { action: "Now", kind: "click" },
+  ]);
+});
+
+test("an assumption needs its distinctive words visible on the page", async () => {
+  const { assumptionGrounded } = await import("../../src/decision.ts");
+  const page: Observation = {
+    ...observation,
+    text: "Main Page Welcome",
+    elements: [
+      {
+        index: "e1",
+        label: "Search Wikipedia",
+        role: "searchbox",
+        value: "IPv4",
+        operations: ["TYPE_TEXT"],
+      },
+    ],
+  };
+  expect(
+    assumptionGrounded("The Search Wikipedia box contains IPv4", page),
+  ).toBe(true);
+  expect(
+    assumptionGrounded("The Search Wikipedia box contains Spider-Man", page),
+  ).toBe(false);
+});

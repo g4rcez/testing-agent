@@ -8,7 +8,7 @@ import {
   BrowserDeadlineError,
   BrowserCommandRejectedError,
 } from "./browser.ts";
-import { backendConfig, decide, fieldValue } from "./decision.ts";
+import { assume, backendConfig, decide, fieldValue } from "./decision.ts";
 import {
   runSchema,
   type Observation,
@@ -80,7 +80,7 @@ const stateSchema = z.object({
   completedSteps: z.array(
     z.object({
       instruction: z.string(),
-      verification: z.enum(["model", "assertion"]),
+      verification: z.enum(["model", "assertion", "assumption"]),
     }),
   ),
   pendingAction: z
@@ -117,12 +117,14 @@ export type RunnerDependencies = {
   ) => BrowserPort;
   decide: typeof decide;
   fieldValue: typeof fieldValue;
+  assume?: typeof assume;
 };
 const defaults: RunnerDependencies = {
   browser: (session, deadline, signal, config) =>
     new Browser(session, deadline, signal, config),
   decide,
   fieldValue,
+  assume,
 };
 
 export async function saveRun(state: RunState): Promise<void> {
@@ -405,7 +407,7 @@ async function executeRun(
         const directory = resolve(stateRoot(), "videos");
         await mkdir(directory, { recursive: true, mode: 0o700 });
         state.video = {
-          path: resolve(directory, `${state.runId}.webm`),
+          path: resolve(directory, `${state.runId}.mp4`),
           status: "starting",
         };
         await saveRun(state);
@@ -589,6 +591,29 @@ async function executeRun(
         await saveRun(state);
         executed++;
         const after = await browser.observe();
+        // A step may state what must be true on the page once its action is done.
+        if (
+          step.assume &&
+          !step.expect &&
+          (await (dependencies.assume ?? assume)(
+            state.input,
+            state.stepIndex,
+            after,
+            callDeadline,
+            controller.signal,
+          ))
+        ) {
+          state.completedSteps.push({
+            instruction: step.instruction,
+            verification: "assumption",
+          });
+          state.stepIndex++;
+          state.stepDecisions = 0;
+          state.unchangedActions = 0;
+          state.staleDecisions = 0;
+          await saveRun(state);
+          continue;
+        }
         state.unchangedActions =
           after.fingerprint === observed.fingerprint
             ? state.unchangedActions + 1
