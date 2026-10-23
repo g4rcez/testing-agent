@@ -74,3 +74,26 @@ test("only the current step's actions are sent as recent actions", () => {
     { action: "Now", kind: "click" },
   ]);
 });
+
+test("an assumption needs its distinctive words visible on the page", async () => {
+  const { assumptionGrounded } = await import("../../src/decision.ts");
+  const page: Observation = {
+    ...observation,
+    text: "Main Page Welcome",
+    elements: [
+      {
+        index: "e1",
+        label: "Search Wikipedia",
+        role: "searchbox",
+        value: "IPv4",
+        operations: ["TYPE_TEXT"],
+      },
+    ],
+  };
+  expect(
+    assumptionGrounded("The Search Wikipedia box contains IPv4", page),
+  ).toBe(true);
+  expect(
+    assumptionGrounded("The Search Wikipedia box contains Spider-Man", page),
+  ).toBe(false);
+});

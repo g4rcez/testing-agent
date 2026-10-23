@@ -62,24 +62,28 @@ backend:
 steps:
   - instruction: Type Large language model into the Search Wikipedia box
     value: Large language model
+    assume: The Search Wikipedia box contains Large language model
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Large_language_model
       text: Large language model
   - instruction: Type IPv4 into the Search Wikipedia box
     value: IPv4
+    assume: The Search Wikipedia box contains IPv4
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv4
       text: Internet Protocol version 4
   - instruction: Type IPv6 into the Search Wikipedia box
     value: IPv6
+    assume: The Search Wikipedia box contains IPv6
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/IPv6
       text: Internet Protocol version 6
   - instruction: Type Spider-Man into the Search Wikipedia box
     value: Spider-Man
+    assume: The Search Wikipedia box contains Spider-Man
   - instruction: Press Enter in the Search Wikipedia box to search
     expect:
       url: https://en.wikipedia.org/wiki/Spider-Man
@@ -94,24 +98,27 @@ testing-agent test wikipedia-search.yaml
 
 The CLI prints JSON with each step's `status` and `success`, the final `passed` result, and the video/report paths. A passing test exits with code `0`. Video recording is enabled by default. The same file ships as [examples/wikipedia-search.yaml](examples/wikipedia-search.yaml).
 
-A step with a `value` is complete once the field holds that value; a step with `expect` is complete only when its URL and page-text assertions hold.
+Two ways to say when a step is done:
+
+- `expect` is a deterministic check (URL, page text) and is what decides the final result.
+- `assume` is a plain-language statement about the page, for example `The Search Wikipedia box contains IPv4`. After the step's action, the step completes only if the model confirms it **and** every distinctive word of the statement is visible in a field, the title, the URL or the page text. The second condition exists because a small local model answers "yes" too easily: a false statement such as `The Search Wikipedia box contains Spider-Man` after typing IPv4 never completes the step.
 
 ## Recorded passing test
 
-This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 42 seconds**, and the URL and page text assertions held on all four articles.
+This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 37 seconds**, and the URL and page text assertions held on all four articles.
 
 ![Real passing Laya run searching Wikipedia for LLMs, IPv4, IPv6 and Spider-Man](docs/assets/wikipedia-search.gif)
 
-| Step | What        | Model choice                        | Result                         | Time  |
-| ---- | ----------- | ----------------------------------- | ------------------------------ | ----- |
-| 1    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 8.1 s |
-| 2    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 6.8 s |
-| 3    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 5.4 s |
-| 4    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.3 s |
-| 5    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 4.6 s |
-| 6    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.1 s |
-| 7    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ field holds the typed value | 5.0 s |
-| 8    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match     | 3.9 s |
+| Step | What        | Model choice                        | Result                          | Time  |
+| ---- | ----------- | ----------------------------------- | ------------------------------- | ----- |
+| 1    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ assumption holds on the page | 4.9 s |
+| 2    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match      | 4.3 s |
+| 3    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ assumption holds on the page | 5.3 s |
+| 4    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match      | 3.7 s |
+| 5    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ assumption holds on the page | 4.2 s |
+| 6    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match      | 4.0 s |
+| 7    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ assumption holds on the page | 4.6 s |
+| 8    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ URL and page text match      | 4.2 s |
 
 Every step passed on the first model decision.
 

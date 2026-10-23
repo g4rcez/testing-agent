@@ -8,7 +8,7 @@ import {
   BrowserDeadlineError,
   BrowserCommandRejectedError,
 } from "./browser.ts";
-import { backendConfig, decide, fieldValue } from "./decision.ts";
+import { assume, backendConfig, decide, fieldValue } from "./decision.ts";
 import {
   runSchema,
   type Observation,
@@ -80,7 +80,7 @@ const stateSchema = z.object({
   completedSteps: z.array(
     z.object({
       instruction: z.string(),
-      verification: z.enum(["model", "assertion", "field"]),
+      verification: z.enum(["model", "assertion", "assumption"]),
     }),
   ),
   pendingAction: z
@@ -117,12 +117,14 @@ export type RunnerDependencies = {
   ) => BrowserPort;
   decide: typeof decide;
   fieldValue: typeof fieldValue;
+  assume?: typeof assume;
 };
 const defaults: RunnerDependencies = {
   browser: (session, deadline, signal, config) =>
     new Browser(session, deadline, signal, config),
   decide,
   fieldValue,
+  assume,
 };
 
 export async function saveRun(state: RunState): Promise<void> {
@@ -589,20 +591,21 @@ async function executeRun(
         await saveRun(state);
         executed++;
         const after = await browser.observe();
-        // A step whose only job is to type its value is done once the field holds it.
+        // A step may state what must be true on the page once its action is done.
         if (
-          decision.operation === "TYPE_TEXT" &&
+          step.assume &&
           !step.expect &&
-          text !== undefined &&
-          after.elements.some(
-            (element) =>
-              element.operations.includes("TYPE_TEXT") &&
-              element.value === text,
-          )
+          (await (dependencies.assume ?? assume)(
+            state.input,
+            state.stepIndex,
+            after,
+            callDeadline,
+            controller.signal,
+          ))
         ) {
           state.completedSteps.push({
             instruction: step.instruction,
-            verification: "field",
+            verification: "assumption",
           });
           state.stepIndex++;
           state.stepDecisions = 0;

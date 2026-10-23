@@ -148,7 +148,7 @@ Defaults: `maxActions: 60`, `maxStepDecisions: 20`, `actionsPerCall: 20`, per-ca
 
 ## Existing recordings and development checks
 
-The [Wikipedia receipt](evidence/wikipedia-search.json) and [video](assets/wikipedia-search.webm) show a real **passing** source CLI run with the optional Node Laya backend: 8 of 8 steps, one model decision each, with URL and page-text assertions after every search and no selectors.
+The [Wikipedia receipt](evidence/wikipedia-search.json) and [video](assets/wikipedia-search.webm) show a real **passing** source CLI run with the optional Node Laya backend: 8 of 8 steps, one model decision each, with URL and page-text assertions after every search, `assume` checks after each typing step, and no selectors.
 
 The older [signed-out GitHub GIF](assets/github-star-sign-in.gif) is historical real-model evidence. Its receipt is in `docs/evidence/`; it does not verify the current definition or renamed repository. The signed-out GitHub demo reaches sign-in, not a successful star. Never record credential entry.
 

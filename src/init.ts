@@ -12,6 +12,7 @@ const example = {
     {
       instruction: "Type IPv6 into the Search Wikipedia box",
       value: "IPv6",
+      assume: "The Search Wikipedia box contains IPv6",
     },
     {
       instruction: "Press Enter in the Search Wikipedia box to search",
@@ -33,6 +34,7 @@ backend:
 steps:
   - instruction: ${example.steps[0]!.instruction}
     value: IPv6
+    assume: The Search Wikipedia box contains IPv6
   - instruction: ${example.steps[1]!.instruction}
     expect:
       url: ${expectation.url}
