@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Decision, Observation } from "./contracts.ts";
+import { RunError } from "./diagnostics.ts";
 import { pageExpression, type PageRequest } from "./page.ts";
 import { assertionExpression, assertionResultSchema, type AssertionResult } from "./assertions.ts";
 import type { Assertion, BrowserConfig } from "./contracts.ts";
@@ -11,6 +12,15 @@ const candidateSchema = z.object({
   value: z.string().optional(),
   currentValue: z.string().optional(),
   checked: z.string().optional(),
+  scroll: z
+    .object({
+      progress: z.number(),
+      below: z.number(),
+      above: z.number(),
+      belowLabels: z.array(z.string()),
+      aboveLabels: z.array(z.string()),
+    })
+    .optional(),
 });
 const observationSchema = z.object({
   url: z.string(),
@@ -33,10 +43,30 @@ const observationSchema = z.object({
   snapshotId: z.uuid(),
 });
 const responseSchema = z.object({ success: z.boolean(), data: z.unknown(), error: z.string().nullable().optional() });
+const dialogSchema = z.object({ type: z.string(), message: z.string() });
+export type Dialog = z.infer<typeof dialogSchema>;
 const receiptSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("stale"), reason: z.string() }),
-  z.object({ status: z.enum(["executed", "uncertain"]), actionId: z.uuid() }),
+  z.object({
+    status: z.enum(["executed", "uncertain"]),
+    actionId: z.uuid(),
+    dialogs: z.array(dialogSchema).optional(),
+    opensTab: z.boolean().optional(),
+    closesTab: z.boolean().optional(),
+  }),
 ]);
+const tabsSchema = z.object({
+  tabs: z.array(
+    z.object({
+      tabId: z.string(),
+      active: z.boolean(),
+      url: z.string(),
+      title: z.string(),
+      label: z.string().nullable().optional(),
+    }),
+  ),
+});
+export type Tab = { id: string; active: boolean; url: string; title: string; label: string | null };
 export class StaleDecisionError extends Error {}
 export class BrowserDeadlineError extends Error {}
 export class BrowserCommandRejectedError extends Error {}
@@ -82,7 +112,9 @@ export class Browser {
     } catch {
       if (this.signal?.aborted) throw new Error("Run cancelled");
       if (Date.now() >= this.deadline) throw new BrowserDeadlineError("Browser call deadline reached");
-      throw new Error("agent-browser " + args[0] + " failed or timed out");
+      throw new RunError("BROWSER_COMMAND_FAILED", "agent-browser " + args[0] + " failed or timed out", {
+        command: String(args[0]),
+      });
     }
     const response = responseSchema.parse(JSON.parse(stdout));
     if (!response.success) throw new BrowserCommandRejectedError("agent-browser " + args[0] + " rejected the command");
@@ -98,7 +130,7 @@ export class Browser {
   private async observeWithRetry(): Promise<unknown> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.evaluate({ type: "observe" });
+        return await this.evaluate({ type: "observe", dialogs: this.config?.dialogs });
       } catch (error) {
         if (
           attempt >= 3 ||
@@ -118,11 +150,15 @@ export class Browser {
     return { ...result, fingerprint: new Bun.CryptoHasher("sha256").update(JSON.stringify(semantic)).digest("hex") };
   }
 
-  async execute(decision: Decision, text?: string): Promise<void> {
+  async execute(
+    decision: Decision,
+    text?: string,
+  ): Promise<{ dialogs?: Dialog[]; opensTab?: boolean; closesTab?: boolean } | void> {
     if (!decision.snapshotId) throw new Error("Decision has no bound observation");
     const receipt = receiptSchema.parse(
       await this.evaluate({
         type: "execute",
+        dialogs: this.config?.dialogs,
         snapshotId: decision.snapshotId,
         actionId: decision.actionId ?? crypto.randomUUID(),
         operation: decision.operation,
@@ -133,6 +169,33 @@ export class Browser {
     );
     if (receipt.status === "stale") throw new StaleDecisionError(receipt.reason);
     if (receipt.status !== "executed") throw new Error("Browser input was interrupted");
+    return receipt.dialogs?.length || receipt.opensTab || receipt.closesTab
+      ? {
+          ...(receipt.dialogs?.length ? { dialogs: receipt.dialogs } : {}),
+          ...(receipt.opensTab ? { opensTab: true } : {}),
+          ...(receipt.closesTab ? { closesTab: true } : {}),
+        }
+      : undefined;
+  }
+
+  /** Every open tab of the session; the active one is where observations and assertions run. */
+  async tabs(): Promise<Tab[]> {
+    const { tabs } = tabsSchema.parse(await this.command(["tab", "list"]));
+    return tabs.map((tab) => ({
+      id: tab.tabId,
+      active: tab.active,
+      url: tab.url,
+      title: tab.title,
+      label: tab.label ?? null,
+    }));
+  }
+
+  async switchTab(id: string): Promise<void> {
+    await this.command(["tab", id]);
+  }
+
+  async closeTab(id: string): Promise<void> {
+    await this.command(["tab", "close", id]);
   }
 
   async receipt(actionId: string): Promise<"executed" | "uncertain" | "unknown"> {

@@ -37,7 +37,7 @@ testing-agent setup laya
 
 This uses [`@receptron/laya`](https://github.com/receptron/laya). The first explicit setup downloads about **1.7 GB** of pinned model weights; allow at least **2 GB RAM**. Wait for `"ready": true` and keep that terminal running. The install command skips unused CUDA downloads; this backend uses the CPU.
 
-Tests check backend reachability before opening a browser. If the local Laya server is not running, an interactive terminal asks whether to set it up now (it starts `testing-agent setup laya` only if you answer yes); non-interactive runs return setup instructions and never download or start anything. Existing Python Laya and hosted Jev configurations remain supported.
+Tests check backend reachability before opening a browser. If the local Laya server is not running, `testing-agent test` starts it for you (the first start downloads the weights, later starts take a few seconds), waits until it answers, and stops it when the run ends. A server that was already running is never touched. Turn this off with `--no-autostart`, `TESTING_AGENT_AUTOSTART=0` or `backend.autostart: false`; in CI (`CI` set) it stays off unless `TESTING_AGENT_AUTOSTART=1`. With autostart off, a missing server returns setup instructions and never downloads or starts anything. Existing Python Laya and hosted Jev configurations remain supported.
 
 ## Start a project
 
@@ -51,7 +51,7 @@ This creates the folder with an `example.test.yaml` (or `.json`) you can run rig
 
 ## First test
 
-Save this as **`wikipedia-search.yaml`**. One flow searches Wikipedia for four topics (a large language model, IPv4, IPv6 and Spider-Man) and checks the article after every search. Steps are plain-language prompts only: no selectors, and the model picks every control.
+Save this as **`wikipedia-search.yaml`**. One flow searches Wikipedia for four topics (a large language model, IPv4, IPv6 and Spider-Man) and checks the article after every search. Steps are plain-language prompts only: no selectors. Steps the page makes unambiguous are done straight from the page; the model decides the rest.
 
 ```yaml
 name: Search Wikipedia for LLMs, IPv4, IPv6 and Spider-Man
@@ -59,6 +59,7 @@ url: https://en.wikipedia.org/wiki/Main_Page
 prompt: Search Wikipedia for four topics, one after another, and check that each article opens.
 backend:
   provider: laya
+totalTimeoutMs: 300000
 steps:
   - instruction: Type Large language model into the Search Wikipedia box
     value: Large language model
@@ -101,11 +102,15 @@ The CLI prints JSON with each step's `status` and `success`, the final `passed` 
 Two ways to say when a step is done:
 
 - `expect` is a deterministic check (URL, page text) and is what decides the final result.
-- `assume` is a plain-language statement about the page, for example `The Search Wikipedia box contains IPv4`. After the step's action, the step completes only if the model confirms it **and** every distinctive word of the statement is visible in a field, the title, the URL or the page text. The second condition exists because a small local model answers "yes" too easily: a false statement such as `The Search Wikipedia box contains Spider-Man` after typing IPv4 never completes the step.
+- `assume` is a plain-language statement about the page, for example `The Search Wikipedia box contains IPv4`. After the step's action, the step completes only if the model confirms it **and** every distinctive word of the statement is visible in a field, the title, the URL or the page text. The second condition exists because a small local model answers "yes" too easily: a false statement such as `The Search Wikipedia box contains Spider-Man` after typing IPv4 never completes the step. A statement of the plain form `The <field> box contains <value>` is read off the page itself and does not need the model at all.
+
+### Fast path
+
+Before asking the model, the runner tries to settle each step from the page: typing a known `value` into a field the instruction names, pressing Enter in it, clicking or opening a control whose label the instruction names, choosing a dropdown option, switching a checkbox, scrolling. It only acts when exactly one control matches (case, accents and spacing are ignored); anything ambiguous, conditional (`if`, `not`, `never`, `or`...) or bound to a `selector` still goes to the model. Fast actions are marked `source: "fast"` in the result. The Wikipedia example below completes this way in about 6 seconds with no model at all, so the local Laya server is not even started. Turn it off with `--no-fast-path` or `fastPath: false`.
 
 ## Recorded passing test
 
-This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 37 seconds**, and the URL and page text assertions held on all four articles.
+This is a real run of that file with the optional local Laya backend (CPU, no API key) when the model picks every control (`--no-fast-path`): **8 of 8 steps passed in 37 seconds**, and the URL and page text assertions held on all four articles.
 
 ![Real passing Laya run searching Wikipedia for LLMs, IPv4, IPv6 and Spider-Man](docs/assets/wikipedia-search.gif)
 

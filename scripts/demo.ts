@@ -30,11 +30,6 @@ const { url, ...definition } = Bun.YAML.parse(
 ) as { url: string; [key: string]: unknown };
 const testFile = resolve(output, "test.yaml");
 await Bun.write(testFile, Bun.YAML.stringify({ ...definition, session }));
-const frames = resolve(output, "frames");
-const captures: Array<{ name: string; at: number }> = [];
-let stopCapture = false;
-let captureError: unknown;
-let capture: Promise<void> | undefined;
 let code = 1;
 console.log(`Browser session: ${session}`);
 try {
@@ -45,20 +40,6 @@ try {
   } else {
     await browser(["wait", 'a[href="/login?return_to=%2Fg4rcez%2Ftesting-agent"]']);
   }
-  if (record) {
-    await mkdir(frames, { recursive: true });
-    capture = (async () => {
-      while (!stopCapture) {
-        const name = `frame-${String(captures.length).padStart(5, "0")}.png`;
-        await browser(["screenshot", resolve(frames, name)]);
-        captures.push({ name, at: performance.now() });
-        await Bun.sleep(100);
-      }
-    })().catch((error) => {
-      captureError = error;
-    });
-    await Bun.sleep(800);
-  }
   console.log(`Running ${backend} in visible browser session ${session}`);
   const child = Bun.spawn(
     [process.execPath, resolve("src/cli.ts"), "run", testFile, "--backend", backend, "--report-dir", output],
@@ -68,64 +49,33 @@ try {
   code = await child.exited;
   await Bun.write(resolve(output, "cli.json"), result);
   console.log(result.trim());
-  if (record) await Bun.sleep(2200);
 } finally {
-  stopCapture = true;
-  await capture;
   console.log(`Browser left open. Close with: agent-browser --session ${session} close`);
 }
 await browser(["screenshot", resolve(output, "result.png")]);
 if (record && code === 0) {
-  if (captureError) throw captureError;
-  if (!captures.length) throw new Error("No browser frames were captured");
-  const timeline =
-    captures
-      .map((frame, index) => {
-        const duration = ((captures[index + 1]?.at ?? frame.at + 100) - frame.at) / 1000;
-        return `file '${frame.name}'\nduration ${duration.toFixed(3)}`;
-      })
-      .join("\n") + `\nfile '${captures.at(-1)?.name}'\n`;
-  await Bun.write(resolve(frames, "frames.txt"), timeline);
-  await exec(
-    "ffmpeg",
-    [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      resolve(frames, "frames.txt"),
-      "-vf",
-      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-      "-c:v",
-      "libx264",
-      "-crf",
-      "20",
-      "-pix_fmt",
-      "yuv420p",
-      "-movflags",
-      "+faststart",
-      resolve(output, "browser.mp4"),
-    ],
-    { timeout: 60_000, maxBuffer: 2_000_000 },
-  );
+  // The run records the browser itself at 60 fps (agent-browser record), so the demo reuses that file.
+  const { video } = JSON.parse(await Bun.file(resolve(output, "cli.json")).text()) as {
+    video?: { path: string; status: string };
+  };
+  if (video?.status !== "saved") throw new Error("The run did not save a video");
+  await copyFile(video.path, resolve(output, "browser.mp4"));
   const gif = resolve(`docs/assets/${example}.gif`);
   await mkdir(resolve("docs/assets"), { recursive: true });
-  await copyFile(resolve(output, "browser.mp4"), resolve(`docs/assets/${example}.mp4`));
+  await copyFile(video.path, resolve(`docs/assets/${example}.mp4`));
   await exec(
     "ffmpeg",
     [
       "-y",
       "-i",
-      resolve(output, "browser.mp4"),
+      video.path,
       "-filter_complex",
-      "fps=8,scale=900:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
+      "fps=60,scale=900:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
       "-loop",
       "0",
       gif,
     ],
-    { timeout: 60_000, maxBuffer: 2_000_000 },
+    { timeout: 300_000, maxBuffer: 2_000_000 },
   );
   console.log(`Recorded the real browser run: ${gif}`);
 }

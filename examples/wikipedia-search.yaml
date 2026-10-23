@@ -3,6 +3,7 @@ url: https://en.wikipedia.org/wiki/Main_Page
 prompt: Search Wikipedia for four topics, one after another, and check that each article opens.
 backend:
   provider: laya
+totalTimeoutMs: 300000
 steps:
   - instruction: Type Large language model into the Search Wikipedia box
     value: Large language model

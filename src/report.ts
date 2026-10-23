@@ -10,6 +10,28 @@ const xml = (value: string) =>
       (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character] ?? "",
     );
 
+// A plain-text version of the debug fields, for CI pages that only show the failure body.
+function failureDetails(state: RunState): string {
+  const { debug } = summarize(state);
+  const step = state.input.steps[state.stepIndex];
+  const lines = [
+    `status: ${state.status}`,
+    `code: ${state.reasonCode ?? "none"}`,
+    ...(step ? [`step ${state.stepIndex + 1}: ${step.instruction}`] : []),
+  ];
+  const decision = debug?.lastDecision;
+  if (decision)
+    lines.push(
+      `last decision: ${decision.operation}${decision.target ? ` -> ${decision.target}` : ""} ` +
+        `(confidence ${decision.confidence}, ${decision.source ?? "model"}, ${decision.inferenceMs} ms)`,
+    );
+  const seen = debug?.lastObservation;
+  if (seen)
+    lines.push(`page: ${seen.url}`, `targets: ${JSON.stringify(seen.targetCounts)}`, `text: ${seen.textExcerpt}`);
+  if (debug?.error) lines.push(`error: ${debug.error.code}${debug.error.message ? ` ${debug.error.message}` : ""}`);
+  return lines.join("\n");
+}
+
 export function junitReport(state: RunState): string {
   const elapsed = Math.max(0, ((state.endedAt ?? state.updatedAt) - state.createdAt) / 1000).toFixed(3);
   const passed =
@@ -18,7 +40,13 @@ export function junitReport(state: RunState): string {
     state.assertions.every((assertion) => assertion.passed);
   const failure = passed
     ? ""
-    : '<failure type="' + xml(state.status) + '" message="' + xml(state.reason ?? "Test did not pass") + '"/>';
+    : '<failure type="' +
+      xml(state.reasonCode ?? state.status) +
+      '" message="' +
+      xml(state.reason ?? "Test did not pass") +
+      '">' +
+      xml(failureDetails(state)) +
+      "</failure>";
   return (
     '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites tests="1" failures="' +
     (passed ? "0" : "1") +
@@ -33,7 +61,15 @@ export function junitReport(state: RunState): string {
     '">' +
     failure +
     "<system-out>" +
-    xml(JSON.stringify({ runId: state.runId, actions: state.actions, assertions: state.assertions })) +
+    xml(
+      JSON.stringify({
+        runId: state.runId,
+        reasonCode: state.reasonCode ?? null,
+        actions: state.actions,
+        assertions: state.assertions,
+        debug: summarize(state).debug,
+      }),
+    ) +
     "</system-out></testcase></testsuite></testsuites>\n"
   );
 }

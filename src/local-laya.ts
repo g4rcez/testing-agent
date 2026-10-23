@@ -1,8 +1,11 @@
 import { z } from "zod";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { rename, unlink } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { ChoiceAnswer, ChoiceQuestion } from "@receptron/laya";
+import { layaSettingsSchema, type LayaSettings } from "./contracts.ts";
 import { validateChoice } from "./decision.ts";
+import { normalizeText } from "./normalize.ts";
 
 export const LAYA_REVISION = "d42786bdff8a7550316339c5fbf8f46caa83ea1b";
 const modelName = `receptron/laya-onnx@${LAYA_REVISION}`;
@@ -43,6 +46,9 @@ const requestSchema = z.object({
       }),
     )
     .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 8),
+  // Answer only these questions. The state is still sized for all of them, so an answer does not
+  // depend on whether its sibling questions were asked in the same request.
+  only: z.array(z.string()).min(1).max(8).optional(),
 });
 
 export type LayaTokenBudget = { countTokens(text: string): number; maxLength: number; headMaxLength: number };
@@ -95,11 +101,13 @@ function pruneOptions(
     const cap = Math.max(1, Math.floor(room / 5));
     if (entries.length <= cap) continue;
     const source = asked[name]?.instructions;
-    const goal = (typeof source === "string" ? source : (source?.goal ?? ""))
-      .toLowerCase()
+    const goal = normalizeText(typeof source === "string" ? source : (source?.goal ?? ""))
       .split(/[^\p{L}\p{N}]+/u)
       .filter((word) => word.length > 2);
-    const score = (description: string) => goal.filter((word) => description.toLowerCase().includes(word)).length;
+    const score = (description: string) => {
+      const folded = normalizeText(description);
+      return goal.filter((word) => folded.includes(word)).length;
+    };
     const keep = new Set(
       entries
         .map(([key, description], index) => ({ key, index, score: score(String(description)) }))
@@ -186,7 +194,12 @@ export function prepareLayaRequest(input: unknown, budget?: LayaTokenBudget) {
     state.page.truncated = low < text.length;
     if (!fits()) throw new Error("Local Laya page context exceeds the model context limit");
   } else state.page.text = parsed.state.page.text;
-  return { state, questions, ids, kept };
+  if (!parsed.only) return { state, questions, ids, kept };
+  const names = new Set(parsed.only);
+  if ([...names].some((name) => !(name in questions))) throw new Error("Unknown question requested");
+  const pick = <T>(all: Record<string, T>) =>
+    Object.fromEntries(Object.entries(all).filter(([name]) => names.has(name)));
+  return { state, questions: pick(questions), ids: pick(ids), kept: pick(kept) };
 }
 
 export function restoreLayaAnswers(
@@ -212,6 +225,82 @@ export function restoreLayaAnswers(
   );
 }
 
+const ANSWER_CACHE_SIZE = 64;
+const DEFAULT_THREADS = 4;
+
+const settingsEnv = {
+  language: "LAYA_LANGUAGE",
+  revision: "LAYA_REVISION",
+  modelDir: "LAYA_MODEL_DIR",
+  maxLen: "LAYA_MAX_LEN",
+  headMaxLen: "LAYA_HEAD_MAX_LEN",
+  threads: "LAYA_THREADS",
+} as const;
+
+/** The server's model settings from its environment (what `setup laya` flags and autostart set). */
+export function layaSettingsFromEnv(env: Record<string, string | undefined> = process.env): LayaSettings {
+  const raw = Object.fromEntries(
+    Object.entries(settingsEnv)
+      .filter(([, name]) => env[name] !== undefined && env[name] !== "")
+      .map(([key, name]) => [key, ["maxLen", "headMaxLen", "threads"].includes(key) ? Number(env[name]) : env[name]]),
+  );
+  return layaSettingsSchema.parse(raw);
+}
+
+/** The same settings as environment variables, for a server started on behalf of a test. */
+export function layaSettingsToEnv(settings: LayaSettings | undefined): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(settingsEnv)
+      .filter(([key]) => settings?.[key as keyof LayaSettings] !== undefined)
+      .map(([key, name]) => [name, String(settings![key as keyof LayaSettings])]),
+  );
+}
+
+type EnsureBundle = (options: { revision: string; subfolder?: string; token: string }) => Promise<string>;
+
+/**
+ * Makes sure the model files are cached without ever overwriting laya_config.json. The runtime's
+ * downloader replaces any file whose size differs from the published one, which would throw away a
+ * hand-edited window size (max_len, head_max_len) as soon as its byte count changed. The revision
+ * is pinned, so the published config cannot change under a cached copy and keeping yours is safe.
+ */
+export async function prepareBundle(
+  options: { directory: string; revision: string; subfolder?: string },
+  ensure: EnsureBundle,
+): Promise<string> {
+  const config = join(options.directory, "laya_config.json");
+  const backup = `${config}.user`;
+  const write = async (path: string, text: string) => {
+    const temporary = `${path}.part-${process.pid}`;
+    await Bun.write(temporary, text);
+    await rename(temporary, path);
+  };
+  // A backup left behind by an interrupted start holds the config the user actually wrote.
+  const kept =
+    (await Bun.file(backup)
+      .text()
+      .catch(() => undefined)) ??
+    (await Bun.file(config)
+      .text()
+      .catch(() => undefined));
+  if (kept !== undefined) await write(backup, kept);
+  const directory = await ensure({
+    revision: options.revision,
+    ...(options.subfolder ? { subfolder: options.subfolder } : {}),
+    token: "",
+  });
+  if (kept !== undefined) {
+    if (
+      (await Bun.file(config)
+        .text()
+        .catch(() => undefined)) !== kept
+    )
+      await write(config, kept);
+    await unlink(backup).catch(() => undefined);
+  }
+  return directory;
+}
+
 export type LocalLayaModel = {
   budget: LayaTokenBudget;
   systemOne(
@@ -221,9 +310,15 @@ export type LocalLayaModel = {
   close(): Promise<void>;
 };
 
-export function startLocalLayaServer(model: LocalLayaModel, options: { port?: number; apiKey?: string } = {}) {
+export function startLocalLayaServer(
+  model: LocalLayaModel,
+  options: { port?: number; apiKey?: string; model?: string; info?: Record<string, unknown> } = {},
+) {
+  const label = options.model ?? modelName;
   let active: Promise<unknown> | undefined;
   let closing: Promise<void> | undefined;
+  const answers = new Map<string, unknown>();
+  const inflight = new Map<string, Promise<{ status: number; body: unknown }>>();
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: options.port ?? 8791,
@@ -237,33 +332,57 @@ export function startLocalLayaServer(model: LocalLayaModel, options: { port?: nu
       if (origin && origin !== url.origin)
         return Response.json({ error: "Cross-origin requests are not allowed" }, { status: 403 });
       if (request.method === "GET" && url.pathname === "/health")
-        return Response.json({ ready: true, model: modelName });
+        return Response.json({ ready: true, model: label, ...options.info });
       if (url.pathname !== "/v1/systemone") return Response.json({ error: "Not found" }, { status: 404 });
       if (options.apiKey && request.headers.get("authorization") !== `Bearer ${options.apiKey}`)
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       if (request.method !== "POST") return Response.json({ error: "Use POST" }, { status: 405 });
-      if (active || closing) return Response.json({ error: "Local model is busy" }, { status: 503 });
+      if (closing) return Response.json({ error: "Local model is busy" }, { status: 503 });
       if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json")
         return Response.json({ error: "Use application/json" }, { status: 415 });
-      // Reserve capacity before reading the body; there is no unbounded queue.
+      // The model is deterministic, so an identical body has an identical answer: serve it from the
+      // cache, or join the run already computing it (a client that timed out and retries).
+      const raw = await request.text();
+      const key = new Bun.CryptoHasher("sha256").update(raw).digest("hex");
+      const cached = answers.get(key);
+      if (cached) {
+        answers.delete(key);
+        answers.set(key, cached);
+        return Response.json(cached);
+      }
+      const running = inflight.get(key);
+      if (running) {
+        const joined = await running;
+        return Response.json(joined.body, { status: joined.status });
+      }
+      // A different request must wait for the client to retry; there is no unbounded queue.
+      if (active) return Response.json({ error: "Local model is busy" }, { status: 503 });
       let finish!: () => void;
       active = new Promise<void>((resolve) => {
         finish = resolve;
       });
-      try {
-        const prepared = prepareLayaRequest(await request.json(), model.budget);
-        if (request.signal.aborted) return new Response(null, { status: 499 });
-        const result = await model.systemOne(prepared.state, prepared.questions);
-        return Response.json({ model: modelName, answers: restoreLayaAnswers(prepared, result.answers) });
-      } catch {
-        return Response.json(
-          { error: "Local Laya could not answer this request; check its input and model context limits" },
-          { status: 422 },
-        );
-      } finally {
-        finish();
-        active = undefined;
-      }
+      const work = Promise.resolve().then(async (): Promise<{ status: number; body: unknown }> => {
+        try {
+          const prepared = prepareLayaRequest(JSON.parse(raw), model.budget);
+          const result = await model.systemOne(prepared.state, prepared.questions);
+          const body = { model: label, answers: restoreLayaAnswers(prepared, result.answers) };
+          answers.set(key, body);
+          if (answers.size > ANSWER_CACHE_SIZE) answers.delete(answers.keys().next().value!);
+          return { status: 200, body };
+        } catch {
+          return {
+            status: 422,
+            body: { error: "Local Laya could not answer this request; check its input and model context limits" },
+          };
+        } finally {
+          finish();
+          active = undefined;
+          inflight.delete(key);
+        }
+      });
+      inflight.set(key, work);
+      const done = await work;
+      return Response.json(done.body, { status: done.status });
     },
   });
   return {
@@ -280,30 +399,68 @@ export function startLocalLayaServer(model: LocalLayaModel, options: { port?: nu
   };
 }
 
-export async function serveLocalLaya(): Promise<void> {
+export async function serveLocalLaya(settings: LayaSettings = layaSettingsFromEnv()): Promise<void> {
   const port = z.coerce
     .number()
     .int()
     .min(1)
     .max(65535)
     .parse(process.env.LAYA_PORT ?? 8791);
+  const language = settings.language ?? "en";
+  const subfolder = language === "en" ? undefined : language;
+  const revision = settings.revision ?? LAYA_REVISION;
+  const label = settings.modelDir
+    ? `local:${resolve(settings.modelDir)}`
+    : `receptron/laya-onnx@${revision}${subfolder ? `/${subfolder}` : ""}`;
   console.log(
     JSON.stringify({
       loading: true,
-      model: modelName,
+      model: label,
       message: "First setup downloads about 1.7 GB of weights; later runs use the cache.",
     }),
   );
-  const { Laya } = await import("@receptron/laya").catch(() => {
+  const { Laya, ensureBundle, defaultCacheDir, DEFAULT_REPO } = await import("@receptron/laya").catch(() => {
     throw new Error(
       "Optional Laya runtime is unavailable. Reinstall testing-agent with optional dependencies enabled. Setup: https://github.com/receptron/laya",
     );
   });
+  let modelDir: string;
+  if (settings.modelDir) {
+    modelDir = resolve(settings.modelDir);
+    if (!(await Bun.file(join(modelDir, "laya.onnx")).exists()))
+      throw new Error(`No Laya bundle (laya.onnx) found in ${modelDir}`);
+  } else {
+    try {
+      modelDir = await prepareBundle(
+        {
+          directory: join(defaultCacheDir(), DEFAULT_REPO.replace("/", "--"), revision, subfolder ?? ""),
+          revision,
+          ...(subfolder ? { subfolder } : {}),
+        },
+        ensureBundle,
+      );
+    } catch (error) {
+      if (!subfolder) throw error;
+      throw new Error(
+        `No "${language}" bundle could be downloaded from ${DEFAULT_REPO}@${revision}. Export one with export_onnx.py and set backend.laya.modelDir (or LAYA_MODEL_DIR).`,
+      );
+    }
+  }
+  const threads = settings.threads ?? DEFAULT_THREADS;
   const model = await Laya.load({
-    revision: LAYA_REVISION,
-    token: "",
-    sessionOptions: { intraOpNumThreads: 2, interOpNumThreads: 1 },
+    modelDir,
+    // Four intra-op threads measured ~25-30% faster than two on an 8-core Apple M1; eight and CoreML were slower.
+    sessionOptions: { intraOpNumThreads: threads, interOpNumThreads: 1 },
   });
+  // laya_config.json is the base; explicit settings win without ever rewriting the file.
+  if (settings.maxLen !== undefined) model.config.max_len = settings.maxLen;
+  if (settings.headMaxLen !== undefined) model.config.head_max_len = settings.headMaxLen;
+  if (model.config.head_max_len > model.config.max_len) {
+    await model.close();
+    throw new Error(
+      `head_max_len ${model.config.head_max_len} cannot be larger than max_len ${model.config.max_len}; set both in laya_config.json or backend.laya`,
+    );
+  }
   let local: ReturnType<typeof startLocalLayaServer>;
   try {
     // Resolve the tokenizer from the runtime that declares it, including nested installs.
@@ -323,15 +480,40 @@ export async function serveLocalLaya(): Promise<void> {
       maxLength: model.config.max_len,
       headMaxLength: model.config.head_max_len,
     };
+    // The first pass allocates the runtime's buffers (about a second); do it before accepting requests.
+    await Promise.resolve()
+      .then(() => {
+        const warmup = prepareLayaRequest(
+          {
+            state: {
+              task: { current_step: "Warm up" },
+              elements: [],
+              page: { text: "Warm up the model with a page of ordinary text. ".repeat(100) },
+              recent_actions: [],
+            },
+            questions: {
+              operation: { type: "choice", instructions: "Warm up", criteria: { a: "first", b: "second" } },
+            },
+          },
+          budget,
+        );
+        return model.systemOne(warmup.state, warmup.questions);
+      })
+      .catch(() => undefined);
     local = startLocalLayaServer(
       { budget, systemOne: (state, questions) => model.systemOne(state, questions), close: () => model.close() },
-      { port, ...(process.env.LAYA_API_KEY ? { apiKey: process.env.LAYA_API_KEY } : {}) },
+      {
+        port,
+        model: label,
+        info: { language, revision, maxLen: model.config.max_len, headMaxLen: model.config.head_max_len, threads },
+        ...(process.env.LAYA_API_KEY ? { apiKey: process.env.LAYA_API_KEY } : {}),
+      },
     );
   } catch (error) {
     await model.close();
     throw error;
   }
-  console.log(JSON.stringify({ ready: true, url: String(local.server.url), model: modelName }));
+  console.log(JSON.stringify({ ready: true, url: String(local.server.url), model: label }));
   await new Promise<void>((resolve, reject) => {
     const stop = () => {
       process.off("SIGINT", stop);

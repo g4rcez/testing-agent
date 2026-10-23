@@ -1,30 +1,36 @@
 import { extname, resolve } from "node:path";
 import { z } from "zod";
-import { runSchema } from "./contracts.ts";
-import { cancelRun, recoverRun, resumeRun, startRun, summarize, loadRun } from "./runner.ts";
+import { layaSettingsSchema, runSchema } from "./contracts.ts";
+import { cancelRun, defaultDependencies, loadRun, recoverRun, resumeRun, startRun, summarize } from "./runner.ts";
 import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
-import { BackendSetupError, ensureBackend } from "./backend.ts";
+import { BackendSetupError, prepareBackend, type BackendHandle } from "./backend.ts";
 import { initTests, type InitFormat } from "./init.ts";
-import { serveLocalLaya } from "./local-laya.ts";
+import { layaSettingsFromEnv, serveLocalLaya } from "./local-laya.ts";
 import { detectEnv, formatManual, planSetup, runSetup } from "./setup.ts";
 
 const help = `testing-agent - AI-driven browser tests through agent-browser
 
 Usage:
-  testing-agent test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
-  jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--report-dir DIR]
+  testing-agent test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--video-fps 1-60] [--report-dir DIR] [--no-autostart] [--no-fast-path]
+  jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--video-fps 1-60] [--report-dir DIR]
   jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
   testing-agent init [folder] [--yaml|--json]
   testing-agent setup [--manual]
-  testing-agent setup laya
+  testing-agent setup laya [--language L] [--max-len N] [--head-max-len N] [--threads N] [--model-dir DIR]
   testing-agent lsp <file.yaml|file.yml|file.json>
   jev-test schema
   jev-test --help
 
-Test/run records video by default (requires ffmpeg). Browser settings belong in
+A local Laya server that is not running is started for the run and stopped with it; --no-autostart
+(or TESTING_AGENT_AUTOSTART=0, backend.autostart: false) turns that off. In CI it is off unless
+TESTING_AGENT_AUTOSTART=1.
+Steps the page makes unambiguous (type a value into a named field, press Enter, click a uniquely
+named control) are done without the model; --no-fast-path (or fastPath: false) sends every step to it.
+Test/run records video by default (requires ffmpeg); --video-fps sets its frame rate
+(default 60). Browser settings belong in
 browser.args (option names without --) and browser.env in the test file.
 Tests require explicit final expect assertions. Test/run and resume automatically
 continue paused calls within the total test deadline. JSON and JUnit reports
@@ -78,8 +84,27 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   if (command === "setup") {
-    if (positional === "laya" && !rest.length) {
-      await serveLocalLaya();
+    if (positional === "laya") {
+      // Flags override the LAYA_* environment; laya_config.json supplies whatever is left unset.
+      const flagNames = {
+        "--language": "language",
+        "--revision": "revision",
+        "--model-dir": "modelDir",
+        "--max-len": "maxLen",
+        "--head-max-len": "headMaxLen",
+        "--threads": "threads",
+      } as const;
+      const given: Record<string, string | number> = {};
+      for (let index = 0; index < rest.length; index += 2) {
+        const flag = rest[index] as keyof typeof flagNames;
+        const value = rest[index + 1];
+        if (!flagNames[flag] || !value || value.startsWith("--") || flagNames[flag] in given)
+          throw new Error(
+            "Use: testing-agent setup laya [--language L] [--revision R] [--model-dir DIR] [--max-len N] [--head-max-len N] [--threads N]",
+          );
+        given[flagNames[flag]] = ["--max-len", "--head-max-len", "--threads"].includes(flag) ? Number(value) : value;
+      }
+      await serveLocalLaya(layaSettingsSchema.parse({ ...layaSettingsFromEnv(), ...given }));
       return 0;
     }
     const manual = positional === "--manual";
@@ -98,12 +123,15 @@ export async function runCli(args: string[]): Promise<number> {
     return 0;
   }
   const flags: Record<string, string> = {};
-  for (let index = 0; index < rest.length; index += 2) {
-    const flag = rest[index],
-      value = rest[index + 1];
+  const noAutostart = rest.includes("--no-autostart");
+  const noFastPath = rest.includes("--no-fast-path");
+  const pairs = rest.filter((arg) => arg !== "--no-autostart" && arg !== "--no-fast-path");
+  for (let index = 0; index < pairs.length; index += 2) {
+    const flag = pairs[index],
+      value = pairs[index + 1];
     if (
       !flag ||
-      !["--backend", "--url", "--session", "--report-dir"].includes(flag) ||
+      !["--backend", "--url", "--session", "--video-fps", "--report-dir"].includes(flag) ||
       !value ||
       value.startsWith("--") ||
       flags[flag]
@@ -119,29 +147,57 @@ export async function runCli(args: string[]): Promise<number> {
     console.log(JSON.stringify(summarize(await loadRun(z.uuid().parse(positional)))));
     return 0;
   }
-  let state;
-  if (command === "test" || command === "run" || command === "validate") {
-    const raw = await readTest(positional);
-    if (flags["--backend"])
-      raw.backend = { ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}), provider: flags["--backend"] };
-    if (flags["--url"]) raw.url = flags["--url"];
-    if (flags["--session"]) raw.session = flags["--session"];
-    if (command !== "validate") raw.recordVideo = true;
-    const input = runSchema.parse(raw);
-    if (command === "validate") {
-      console.log(JSON.stringify({ valid: true, name: input.name, steps: input.steps.length }));
-      return 0;
-    }
-    await ensureBackend(input.backend);
-    state = await startRun(input);
-  } else if (command === "resume" || command === "recover") {
-    const runId = z.uuid().parse(positional);
-    state = command === "recover" ? await recoverRun(runId) : await resumeRun(runId);
-  } else throw new Error("Unknown command; use --help");
-  while (state.status === "paused") state = await resumeRun(state.runId);
-  const reports = await writeReports(state, flags["--report-dir"] ?? resolve(stateRoot(), "reports"));
-  console.log(JSON.stringify({ ...summarize(state), reports }));
-  return state.status === "completed" ? 0 : state.status === "cancelled" ? 130 : 1;
+  // A local server is started only when a step needs the model, and stopped with the run; one that
+  // was already running is left alone.
+  let backend: BackendHandle | undefined;
+  const stopStarted = async () => {
+    const server = backend;
+    backend = undefined;
+    await server?.stop();
+  };
+  const dependencies = () => ({ ...defaultDependencies, beforeModel: () => backend?.ready() ?? Promise.resolve() });
+  const onSignal = () => void stopStarted().finally(() => process.exit(130));
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+  try {
+    let state;
+    if (command === "test" || command === "run" || command === "validate") {
+      const raw = await readTest(positional);
+      if (flags["--backend"])
+        raw.backend = {
+          ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}),
+          provider: flags["--backend"].toLowerCase(),
+        };
+      if (flags["--url"]) raw.url = flags["--url"];
+      if (flags["--session"]) raw.session = flags["--session"];
+      if (flags["--video-fps"]) raw.videoFps = Number(flags["--video-fps"]);
+      if (command !== "validate") raw.recordVideo = true;
+      if (noAutostart)
+        raw.backend = { ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}), autostart: false };
+      if (noFastPath) raw.fastPath = false;
+      const input = runSchema.parse(raw);
+      if (command === "validate") {
+        console.log(JSON.stringify({ valid: true, name: input.name, steps: input.steps.length }));
+        return 0;
+      }
+      backend = await prepareBackend(input.backend);
+      state = await startRun(input, dependencies());
+    } else if (command === "resume" || command === "recover") {
+      const runId = z.uuid().parse(positional);
+      const saved = (await loadRun(runId)).input.backend;
+      if (noAutostart) saved.autostart = false;
+      backend = await prepareBackend(saved);
+      state = command === "recover" ? await recoverRun(runId, dependencies()) : await resumeRun(runId, dependencies());
+    } else throw new Error("Unknown command; use --help");
+    while (state.status === "paused") state = await resumeRun(state.runId, dependencies());
+    const reports = await writeReports(state, flags["--report-dir"] ?? resolve(stateRoot(), "reports"));
+    console.log(JSON.stringify({ ...summarize(state), reports }));
+    return state.status === "completed" ? 0 : state.status === "cancelled" ? 130 : 1;
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    await stopStarted();
+  }
 }
 
 if (
@@ -159,7 +215,7 @@ if (
             : error instanceof Error
               ? error.message
               : "Command failed",
-        ...(error instanceof BackendSetupError ? { setup: error.setup } : {}),
+        ...(error instanceof BackendSetupError ? { code: error.code, setup: error.setup } : {}),
       }),
     );
     process.exitCode = error instanceof BackendSetupError ? 1 : 2;
