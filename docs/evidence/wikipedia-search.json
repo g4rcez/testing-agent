@@ -1,0 +1,191 @@
+{
+  "name": "Search Wikipedia for LLMs, IPv4, IPv6 and Spider-Man",
+  "status": "completed",
+  "passed": true,
+  "steps": [
+    {
+      "step": 1,
+      "instruction": "Type Large language model into the Search Wikipedia box",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 2,
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 3,
+      "instruction": "Type IPv4 into the Search Wikipedia box",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 4,
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 5,
+      "instruction": "Type IPv6 into the Search Wikipedia box",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 6,
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 7,
+      "instruction": "Type Spider-Man into the Search Wikipedia box",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    },
+    {
+      "step": 8,
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "status": "passed",
+      "success": true,
+      "verification": "assertion"
+    }
+  ],
+  "currentStep": null,
+  "totalSteps": 8,
+  "completedSteps": [
+    {
+      "instruction": "Type Large language model into the Search Wikipedia box",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Type IPv4 into the Search Wikipedia box",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Type IPv6 into the Search Wikipedia box",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Type Spider-Man into the Search Wikipedia box",
+      "verification": "assertion"
+    },
+    {
+      "instruction": "Press Enter in the Search Wikipedia box to search",
+      "verification": "assertion"
+    }
+  ],
+  "actions": [
+    {
+      "stepIndex": 0,
+      "operation": "TYPE_TEXT",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0884,
+      "elapsedMs": 5335,
+      "inferenceMs": 4014,
+      "executeMs": 185
+    },
+    {
+      "stepIndex": 1,
+      "operation": "PRESS_ENTER",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0475,
+      "elapsedMs": 9295,
+      "inferenceMs": 2829,
+      "executeMs": 366
+    },
+    {
+      "stepIndex": 2,
+      "operation": "TYPE_TEXT",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0931,
+      "elapsedMs": 14380,
+      "inferenceMs": 3961,
+      "executeMs": 154
+    },
+    {
+      "stepIndex": 3,
+      "operation": "PRESS_ENTER",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0815,
+      "elapsedMs": 18365,
+      "inferenceMs": 2910,
+      "executeMs": 157
+    },
+    {
+      "stepIndex": 4,
+      "operation": "TYPE_TEXT",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.2917,
+      "elapsedMs": 23135,
+      "inferenceMs": 3358,
+      "executeMs": 200
+    },
+    {
+      "stepIndex": 5,
+      "operation": "PRESS_ENTER",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0635,
+      "elapsedMs": 26648,
+      "inferenceMs": 2534,
+      "executeMs": 161
+    },
+    {
+      "stepIndex": 6,
+      "operation": "TYPE_TEXT",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.2255,
+      "elapsedMs": 32071,
+      "inferenceMs": 3494,
+      "executeMs": 148
+    },
+    {
+      "stepIndex": 7,
+      "operation": "PRESS_ENTER",
+      "target": "Search Wikipedia",
+      "model": "receptron/laya-onnx@d42786bdff8a7550316339c5fbf8f46caa83ea1b",
+      "confidence": 0.0562,
+      "elapsedMs": 35561,
+      "inferenceMs": 2531,
+      "executeMs": 154
+    }
+  ],
+  "assertions": [
+    {
+      "passed": true,
+      "index": 0,
+      "message": "Assertion passed"
+    }
+  ],
+  "reason": null,
+  "elapsedMs": 37723,
+  "resume": null
+}

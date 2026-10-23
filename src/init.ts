@@ -4,16 +4,21 @@ import { join, resolve } from "node:path";
 export type InitFormat = "yaml" | "json";
 
 const example = {
-  name: "Open About on garcez.dev",
-  url: "https://garcez.dev/",
-  prompt: "Open the About page and verify its content.",
+  name: "Search Wikipedia for IPv6",
+  url: "https://en.wikipedia.org/wiki/Main_Page",
+  prompt: "Search Wikipedia for IPv6 and check that its article opens.",
   backend: { provider: "laya" },
   steps: [
     {
-      instruction: "Click About in the main navigation",
+      instruction: "Type IPv6 into the Search Wikipedia box",
+      value: "IPv6",
+      expect: { selector: "#searchInput", value: "IPv6" },
+    },
+    {
+      instruction: "Press Enter in the Search Wikipedia box to search",
       expect: {
-        url: "https://garcez.dev/about",
-        text: "Product engineering with frontend depth.",
+        url: "https://en.wikipedia.org/wiki/IPv6",
+        text: "Internet Protocol version 6",
       },
     },
   ],
@@ -26,9 +31,14 @@ backend:
   provider: laya
 steps:
   - instruction: ${example.steps[0]!.instruction}
+    value: IPv6
     expect:
-      url: ${example.steps[0]!.expect.url}
-      text: ${example.steps[0]!.expect.text}
+      selector: '#searchInput'
+      value: IPv6
+  - instruction: ${example.steps[1]!.instruction}
+    expect:
+      url: ${example.steps[1]!.expect.url}
+      text: ${example.steps[1]!.expect.text}
 `;
 
 export function exampleTest(format: InitFormat): string {

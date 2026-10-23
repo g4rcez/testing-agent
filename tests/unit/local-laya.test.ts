@@ -240,3 +240,50 @@ test("local server has bounded concurrency and preserves model errors", async ()
     await local.close();
   }
 });
+
+test("long pages keep the options that match the step and restore pruned ones at zero", () => {
+  const criteria = Object.fromEntries(
+    Array.from({ length: 80 }, (_, index) => [
+      `e${index}`,
+      {
+        element: `[e${index}] ${index === 70 ? "Search" : "link"}`,
+        role: "link",
+      },
+    ]),
+  );
+  const long = {
+    ...input,
+    state: {
+      ...input.state,
+      task: { ...input.state.task, steps: ["a", "b"] },
+    },
+    questions: {
+      click_target: {
+        type: "choice",
+        instructions: { goal: "Click Search", operation: "CLICK" },
+        criteria,
+      },
+    },
+  };
+  const prepared = prepareLayaRequest(long, budget);
+  const small = { ...budget, countTokens: () => 5, headMaxLength: 100 };
+  const pruned = prepareLayaRequest(long, small);
+  expect(Object.keys(prepared.questions.click_target!.criteria)).toHaveLength(
+    80,
+  );
+  const kept = Object.keys(pruned.questions.click_target!.criteria);
+  expect(kept.length).toBeLessThan(80);
+  expect(Object.values(pruned.ids.click_target!)).toContain("e70");
+  expect(pruned.kept.click_target).toEqual(kept);
+  const restored = restoreLayaAnswers(pruned, {
+    click_target: {
+      type: "choice",
+      choice: kept[0]!,
+      probabilities: Object.fromEntries(
+        kept.map((key) => [key, key === kept[0] ? 1 : 0]),
+      ),
+      confidence: 1,
+    },
+  } as never);
+  expect(Object.keys(restored.click_target!.probabilities)).toHaveLength(80);
+});

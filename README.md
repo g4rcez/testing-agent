@@ -51,82 +51,99 @@ This creates the folder with an `example.test.yaml` (or `.json`) you can run rig
 
 ## First test
 
-Save this as **`blog.test.yaml`**. It defines three ordered steps and checks both the URL and page text after each one. No selectors are needed.
+Save this as **`wikipedia-search.yaml`**. One flow searches Wikipedia for four topics (a large language model, IPv4, IPv6 and Spider-Man) and checks, after every step, what the page shows. Each step is plain language; the model picks the control, so no step binds a selector.
 
 ```yaml
-name: Explore garcez.dev
-url: https://garcez.dev/
-prompt: Follow the three steps in order and validate each result.
+name: Search Wikipedia for LLMs, IPv4, IPv6 and Spider-Man
+url: https://en.wikipedia.org/wiki/Main_Page
+prompt: Search Wikipedia for four topics, one after another, and check that each article opens.
 backend:
   provider: laya
 steps:
-  - instruction: Type ls into the Interactive garcez.dev terminal
-    value: ls
+  - instruction: Type Large language model into the Search Wikipedia box
+    value: Large language model
     expect:
-      url: https://garcez.dev/
-      text: "[~]>_ ls"
-  - instruction: Press Enter in the Interactive garcez.dev terminal to execute ls
+      selector: "#searchInput"
+      value: Large language model
+  - instruction: Press Enter in the Search Wikipedia box to search
     expect:
-      url: https://garcez.dev/
-      text: README.md agents.ts posts projects skills.ts tags
-  - instruction: Open About from the main navigation
+      url: https://en.wikipedia.org/wiki/Large_language_model
+      text: Large language model
+  - instruction: Type IPv4 into the Search Wikipedia box
+    value: IPv4
     expect:
-      url: https://garcez.dev/about
-      text: Product engineering with frontend depth.
+      selector: "#searchInput"
+      value: IPv4
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/IPv4
+      text: Internet Protocol version 4
+  - instruction: Type IPv6 into the Search Wikipedia box
+    value: IPv6
+    expect:
+      selector: "#searchInput"
+      value: IPv6
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/IPv6
+      text: Internet Protocol version 6
+  - instruction: Type Spider-Man into the Search Wikipedia box
+    value: Spider-Man
+    expect:
+      selector: "#searchInput"
+      value: Spider-Man
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect:
+      url: https://en.wikipedia.org/wiki/Spider-Man
+      text: Spider-Man
 ```
 
 Run it:
 
 ```sh
-testing-agent test blog.test.yaml
+testing-agent test wikipedia-search.yaml
 ```
 
-The CLI prints JSON with each step's `status` and `success`, the final `passed` result, and the video/report paths. A passing test exits with code `0`. Video recording is enabled by default.
-
-The same definition is in [examples/garcez-blog.yaml](examples/garcez-blog.yaml). **This terminal workflow still blocks with the tested local models.** Its assertions have not been weakened.
+The CLI prints JSON with each step's `status` and `success`, the final `passed` result, and the video/report paths. A passing test exits with code `0`. Video recording is enabled by default. The same file ships as [examples/wikipedia-search.yaml](examples/wikipedia-search.yaml).
 
 ## Recorded passing test
 
-The simpler [About example](examples/garcez-about.yaml) passed with the optional local backend: it opened About and checked both its URL and heading. The model first opened and closed the terminal before selecting About; those actions remain in the recording and receipt.
+This is a real run of that file with the optional local Laya backend (CPU, no API key): **8 of 8 steps passed in 38 seconds**, and the final URL and page text assertions held on all four articles.
 
-```sh
-testing-agent test "$(npm root -g)/testing-agent/examples/garcez-about.yaml"
-```
+![Real passing Laya run searching Wikipedia for LLMs, IPv4, IPv6 and Spider-Man](docs/assets/wikipedia-search.gif)
 
-![Real passing Laya run on garcez.dev](docs/assets/garcez-about.gif)
+| Step | What        | Model choice                        | Result    | Time  |
+| ---- | ----------- | ----------------------------------- | --------- | ----- |
+| 1    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.3 s |
+| 2    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 4.0 s |
+| 3    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.1 s |
+| 4    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 4.0 s |
+| 5    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 4.8 s |
+| 6    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 3.5 s |
+| 7    | Type        | `TYPE_TEXT` on “Search Wikipedia”   | ✅ passed | 5.4 s |
+| 8    | Press Enter | `PRESS_ENTER` on “Search Wikipedia” | ✅ passed | 3.5 s |
 
-[Watch the passing video](docs/assets/garcez-about.webm) · [Read the passing output](docs/evidence/garcez-about.json)
+Every step passed on the first model decision, and each assertion checked the real page: the search box value after typing, and the exact article URL and text after Enter.
 
-This proves that recorded run, not general model reliability or success of the three-step terminal workflow.
+[Watch the video](docs/assets/wikipedia-search.webm) · [Read the full output](docs/evidence/wikipedia-search.json)
 
-<details>
-<summary>Recorded local Laya attempt (blocked, not passed)</summary>
-
-![Real blocked Laya run on garcez.dev](docs/assets/garcez-blog.gif)
-
-[Watch the video](docs/assets/garcez-blog.webm) · [Read the output](docs/evidence/garcez-blog.json)
-
-The local model selected unrelated controls and the runner blocked the test. This is real failure evidence, not a passing demo. Definitions and assertions are validated separately from model accuracy.
-
-</details>
+Reproduce it with the local backend running: `bun run demo:wikipedia -- --record`. This is evidence for this recorded run and flow, not a guarantee for every site or prompt.
 
 ## Editor autocomplete
 
 ```sh
-testing-agent lsp blog.test.yaml
+testing-agent lsp wikipedia-search.yaml
 ```
 
 This adds the bundled schema reference for JSON/YAML editor suggestions. It does not install an editor extension or start a language server.
 
 ## More examples
 
-| Example                                             | What it checks                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------------- |
-| [Passing About test](examples/garcez-about.yaml)    | Navigation to About, exact URL, and page heading                     |
-| [Blog test](examples/garcez-blog.yaml)              | Terminal input, complete `ls` output, and About; three checked steps |
-| [Terminal](examples/garcez-ls.yaml)                 | Runs `ls` and checks all six output entries in order                 |
-| [GitHub tour](examples/github-repository-tour.yaml) | README, license, navigation, and the signed-out Star gate            |
-| [Stay search](examples/stay-search-journey.yaml)    | Filtering and details in a compatible local app                      |
+| Example                                             | What it checks                                                        |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| [Wikipedia search](examples/wikipedia-search.yaml)  | Four searches in one flow, each checked by exact URL and article text |
+| [GitHub tour](examples/github-repository-tour.yaml) | README, license, navigation, and the signed-out Star gate             |
+| [Stay search](examples/stay-search-journey.yaml)    | Filtering and details in a compatible local app                       |
 
 The authenticated [GitHub Star example](examples/github-star.yaml) changes account state and needs a manually signed-in session. The signed-out examples stop at sign-in and never add a star.
 

@@ -7,14 +7,14 @@ const exec = promisify(execFile);
 const args = process.argv.slice(2);
 let backend = "laya";
 let record = false;
-let workflow = "garcez";
+let workflow = "wikipedia";
 for (let index = 0; index < args.length; index++) {
   if (args[index] === "--record") record = true;
   else if (
     args[index] === "--workflow" &&
-    ["garcez", "github"].includes(args[index + 1] ?? "")
+    ["wikipedia", "github"].includes(args[index + 1] ?? "")
   )
-    workflow = args[++index] ?? "garcez";
+    workflow = args[++index] ?? "wikipedia";
   else if (
     args[index] === "--backend" &&
     ["jev", "laya"].includes(args[index + 1] ?? "")
@@ -22,14 +22,15 @@ for (let index = 0; index < args.length; index++) {
     backend = args[++index] ?? "laya";
   else
     throw new Error(
-      "Usage: bun run scripts/demo-garcez.ts [--workflow garcez|github] [--backend laya|jev] [--record]",
+      "Usage: bun run scripts/demo.ts [--workflow wikipedia|github] [--backend laya|jev] [--record]",
     );
 }
 const controller = process.env.AGENT_BROWSER_BIN ?? Bun.which("agent-browser");
 if (!controller) throw new Error("Install agent-browser first");
 if (record && !Bun.which("ffmpeg"))
   throw new Error("Recording requires ffmpeg on PATH");
-const example = workflow === "github" ? "github-star-sign-in" : "garcez-ls";
+const example =
+  workflow === "github" ? "github-star-sign-in" : "wikipedia-search";
 const session = `${example}-${crypto.randomUUID().slice(0, 8)}`;
 const output = resolve("artifacts", session);
 await mkdir(output, { recursive: true });
@@ -54,13 +55,9 @@ let code = 1;
 console.log(`Browser session: ${session}`);
 try {
   await browser(["--headed", "open", url]);
-  await browser(["set", "viewport", "1100", "780", "1"]);
-  if (workflow === "garcez") {
-    await browser([
-      "wait",
-      "--fn",
-      'Array.from(document.querySelectorAll(\'[role="group"][aria-roledescription="terminal"]\')).some(node => node.innerText.includes("[~]>_") && node.querySelector("textarea"))',
-    ]);
+  await browser(["set", "viewport", "1280", "800", "1"]);
+  if (workflow === "wikipedia") {
+    await browser(["wait", "#searchInput"]);
   } else {
     await browser([
       "wait",
@@ -155,7 +152,7 @@ if (record && code === 0) {
       "-i",
       resolve(output, "browser.webm"),
       "-filter_complex",
-      "fps=10,scale=1000:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
+      "fps=8,scale=900:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
       "-loop",
       "0",
       gif,

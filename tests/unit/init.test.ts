@@ -17,7 +17,7 @@ test("example tests are valid in both formats", () => {
   for (const format of ["yaml", "json"] as const) {
     const text = exampleTest(format);
     const value = format === "json" ? JSON.parse(text) : Bun.YAML.parse(text);
-    expect(runSchema.parse(value).steps).toHaveLength(1);
+    expect(runSchema.parse(value).steps).toHaveLength(2);
   }
 });
 

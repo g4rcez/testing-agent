@@ -57,7 +57,11 @@ export function backendConfig(backend: Backend) {
   };
 }
 
-type HistoryEntry = { operation: string; target?: string | undefined };
+type HistoryEntry = {
+  operation: string;
+  target?: string | undefined;
+  stepIndex?: number | undefined;
+};
 
 export function makeRequest(
   input: RunInput,
@@ -117,13 +121,20 @@ export function makeRequest(
     };
   }
   questions.operation = { type: "choice", instructions, criteria: operations };
-  const recentActions = history.slice(-10).map((action) => ({
-    action: action.target ?? action.operation,
-    kind:
-      action.operation === "TYPE_TEXT"
-        ? "fill"
-        : action.operation.toLowerCase(),
-  }));
+  // Earlier steps are finished; their actions only add noise to a small model.
+  const recentActions = history
+    .filter(
+      (action) =>
+        action.stepIndex === undefined || action.stepIndex === stepIndex,
+    )
+    .slice(-10)
+    .map((action) => ({
+      action: action.target ?? action.operation,
+      kind:
+        action.operation === "TYPE_TEXT"
+          ? "fill"
+          : action.operation.toLowerCase(),
+    }));
   return {
     state: {
       task: {
