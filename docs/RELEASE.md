@@ -6,7 +6,11 @@
 - Pushes to `main` publish only after Linux and macOS verification succeeds, and only from `g4rcez/testing-agent`.
 - Keep the existing `vX.Y.Z` GitHub tag history. The package/repository rename does not reset versions or rewrite `v0.0.1`, which published `agent-tester`.
 - The rename is a patch: the next publication is `testing-agent@0.0.2` and GitHub `v0.0.2`.
-- Later releases inspect all commits since the latest stable tag: `fix` increments patch, `feat` increments minor, and `!` or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer increments major. The highest increment wins. Other commit types do not publish.
+- Later releases inspect all commits since the latest stable tag and every conventional commit type publishes. The highest increment wins:
+  - **major**: `feat!` or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer
+  - **minor**: `feat`, `refactor` (including `refactor!`), `ci`, `perf`, `fix` (including `fix!`)
+  - **patch**: `build`, `chore`, `style`, `test`, `docs`
+  - Other messages (merge commits, `wip`, untyped) do not publish. A `!` on a non-`feat` type does not raise it above its own level.
 - Version changes affect the release workspace only; there are no version-bump commits or CI loops. Tags and npm versions hold release history.
 - Releases are serialized. Keep the legacy concurrency group identifier so renamed workflows also serialize against earlier runs.
 - The release tags the exact source revision whose checks passed. npm publication with provenance and public-registry verification must succeed before GitHub Release creation.

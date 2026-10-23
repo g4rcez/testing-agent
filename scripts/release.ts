@@ -9,6 +9,11 @@ import { z } from "zod";
 const exec = promisify(execFile);
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
+const patchTypes = new Set(["build", "chore", "style", "test", "docs"]);
+const minorTypes = new Set(["feat", "refactor", "ci", "perf", "fix"]);
+
+// Only a breaking feat (or a BREAKING CHANGE footer) is a major release; any other
+// recognised type releases at least a patch, so every conventional commit ships.
 export function nextVersion(previous: string | undefined, messages: string[]): string | null {
   if (previous === undefined) return "0.0.1";
   const match = stableVersion.exec(previous);
@@ -16,9 +21,10 @@ export function nextVersion(previous: string | undefined, messages: string[]): s
   let increment = 0;
   for (const message of messages) {
     const header = /^([a-z]+)(?:\([^\r\n)]+\))?(!)?:[\t ]+\S/.exec(message);
-    if (header?.[2] || /^BREAKING[ -]CHANGE:[\t ]*\S/m.test(message)) increment = 3;
-    else if (header?.[1] === "feat") increment = Math.max(increment, 2);
-    else if (header?.[1] === "fix") increment = Math.max(increment, 1);
+    const type = header?.[1] ?? "";
+    if ((header?.[2] && type === "feat") || /^BREAKING[ -]CHANGE:[\t ]*\S/m.test(message)) increment = 3;
+    else if (minorTypes.has(type)) increment = Math.max(increment, 2);
+    else if (patchTypes.has(type)) increment = Math.max(increment, 1);
   }
   const [major, minor, patch] = match.slice(1).map(Number) as [number, number, number];
   return increment === 3
@@ -209,9 +215,7 @@ async function release(): Promise<void> {
   const pending = pendingRelease(baseline, registry?.versions, revision);
   const version = pending ?? (sameRevision ? previousTag!.slice(1) : nextVersion(previousTag?.slice(1), messages));
   if (!version) {
-    console.log(
-      JSON.stringify({ released: false, reason: "No fix, feat, or breaking-change commits since the last release" }),
-    );
+    console.log(JSON.stringify({ released: false, reason: "No conventional commits since the last release" }));
     return;
   }
   const tag = `v${version}`;

@@ -54,7 +54,7 @@ test("a package rename keeps Git version history but starts a new npm reconcilia
   expect(() => publicationBaseline("v0.0.1", "unexpected-package")).toThrow();
   const baseline = publicationBaseline("v0.0.1", "agent-tester");
   expect(pendingRelease(baseline, undefined, "rename-revision")).toBeUndefined();
-  expect(nextVersion("0.0.1", ["fix: Rename the package"])).toBe("0.0.2");
+  expect(nextVersion("0.0.1", ["chore: Rename the package"])).toBe("0.0.2");
   expect(pendingRelease(baseline, { "0.0.2": { gitHead: "rename-revision" } }, "rename-revision")).toBe("0.0.2");
   expect(() => pendingRelease(baseline, { "0.0.2": { gitHead: "rename-revision" } }, "other-revision")).toThrow(
     "awaiting GitHub",
@@ -92,14 +92,27 @@ test("first release is always 0.0.1", () => {
 
 test("Conventional Commits choose the highest explicit release increment", () => {
   for (const [messages, expected] of [
-    [["fix: Correct a defect"], "1.2.4"],
-    [["fix(browser): Correct a defect", "feat: Add a command"], "1.3.0"],
+    [["feat!: Change the command contract"], "2.0.0"],
     [["feat(cli)!: Change the command contract"], "2.0.0"],
-    [["fix!: Change the error contract"], "2.0.0"],
     [["chore: Update\n\nBREAKING CHANGE: Change the protocol"], "2.0.0"],
     [["feat: Update\n\nBREAKING-CHANGE: Change the protocol"], "2.0.0"],
-    [["docs: Update documentation", "Merge pull request #1"], null],
-    [["docs: Mention feat: in prose"], null],
+    [["feat: Add a command"], "1.3.0"],
+    [["refactor!: Change internals"], "1.3.0"],
+    [["refactor: Change internals"], "1.3.0"],
+    [["ci: Change the pipeline"], "1.3.0"],
+    [["perf: Speed up the run"], "1.3.0"],
+    [["fix(browser): Correct a defect"], "1.3.0"],
+    [["fix!: Change the error contract"], "1.3.0"],
+    [["build: Update the bundler"], "1.2.4"],
+    [["chore: Tidy"], "1.2.4"],
+    [["style: Format"], "1.2.4"],
+    [["test: Cover a case"], "1.2.4"],
+    [["docs: Update documentation"], "1.2.4"],
+    [["chore!: Drop a script"], "1.2.4"],
+    [["docs: Update", "fix: Correct a defect"], "1.3.0"],
+    [["fix: Correct a defect", "feat!: Break it", "chore: Tidy"], "2.0.0"],
+    [["docs: Mention feat!: in prose"], "1.2.4"],
+    [["Merge pull request #1", "wip: scratch", "update things"], null],
     [[], null],
   ] as const)
     expect(nextVersion("1.2.3", [...messages])).toBe(expected);
