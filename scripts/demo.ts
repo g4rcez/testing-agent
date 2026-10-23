@@ -10,39 +10,23 @@ let record = false;
 let workflow = "wikipedia";
 for (let index = 0; index < args.length; index++) {
   if (args[index] === "--record") record = true;
-  else if (
-    args[index] === "--workflow" &&
-    ["wikipedia", "github"].includes(args[index + 1] ?? "")
-  )
+  else if (args[index] === "--workflow" && ["wikipedia", "github"].includes(args[index + 1] ?? ""))
     workflow = args[++index] ?? "wikipedia";
-  else if (
-    args[index] === "--backend" &&
-    ["jev", "laya"].includes(args[index + 1] ?? "")
-  )
+  else if (args[index] === "--backend" && ["jev", "laya"].includes(args[index + 1] ?? ""))
     backend = args[++index] ?? "laya";
-  else
-    throw new Error(
-      "Usage: bun run scripts/demo.ts [--workflow wikipedia|github] [--backend laya|jev] [--record]",
-    );
+  else throw new Error("Usage: bun run scripts/demo.ts [--workflow wikipedia|github] [--backend laya|jev] [--record]");
 }
 const controller = process.env.AGENT_BROWSER_BIN ?? Bun.which("agent-browser");
 if (!controller) throw new Error("Install agent-browser first");
-if (record && !Bun.which("ffmpeg"))
-  throw new Error("Recording requires ffmpeg on PATH");
-const example =
-  workflow === "github" ? "github-star-sign-in" : "wikipedia-search";
+if (record && !Bun.which("ffmpeg")) throw new Error("Recording requires ffmpeg on PATH");
+const example = workflow === "github" ? "github-star-sign-in" : "wikipedia-search";
 const session = `${example}-${crypto.randomUUID().slice(0, 8)}`;
 const output = resolve("artifacts", session);
 await mkdir(output, { recursive: true });
 const browser = (args: string[]) =>
-  exec(controller, ["--session", session, ...args], {
-    timeout: 30_000,
-    maxBuffer: 2_000_000,
-  });
+  exec(controller, ["--session", session, ...args], { timeout: 30_000, maxBuffer: 2_000_000 });
 const { url, ...definition } = Bun.YAML.parse(
-  await Bun.file(
-    new URL(`../examples/${example}.yaml`, import.meta.url),
-  ).text(),
+  await Bun.file(new URL(`../examples/${example}.yaml`, import.meta.url)).text(),
 ) as { url: string; [key: string]: unknown };
 const testFile = resolve(output, "test.yaml");
 await Bun.write(testFile, Bun.YAML.stringify({ ...definition, session }));
@@ -59,10 +43,7 @@ try {
   if (workflow === "wikipedia") {
     await browser(["wait", "#searchInput"]);
   } else {
-    await browser([
-      "wait",
-      'a[href="/login?return_to=%2Fg4rcez%2Ftesting-agent"]',
-    ]);
+    await browser(["wait", 'a[href="/login?return_to=%2Fg4rcez%2Ftesting-agent"]']);
   }
   if (record) {
     await mkdir(frames, { recursive: true });
@@ -80,21 +61,8 @@ try {
   }
   console.log(`Running ${backend} in visible browser session ${session}`);
   const child = Bun.spawn(
-    [
-      process.execPath,
-      resolve("src/cli.ts"),
-      "run",
-      testFile,
-      "--backend",
-      backend,
-      "--report-dir",
-      output,
-    ],
-    {
-      env: { ...process.env, AGENT_BROWSER_BIN: controller },
-      stdout: "pipe",
-      stderr: "inherit",
-    },
+    [process.execPath, resolve("src/cli.ts"), "run", testFile, "--backend", backend, "--report-dir", output],
+    { env: { ...process.env, AGENT_BROWSER_BIN: controller }, stdout: "pipe", stderr: "inherit" },
   );
   const result = await new Response(child.stdout).text();
   code = await child.exited;
@@ -104,9 +72,7 @@ try {
 } finally {
   stopCapture = true;
   await capture;
-  console.log(
-    `Browser left open. Close with: agent-browser --session ${session} close`,
-  );
+  console.log(`Browser left open. Close with: agent-browser --session ${session} close`);
 }
 await browser(["screenshot", resolve(output, "result.png")]);
 if (record && code === 0) {
@@ -115,8 +81,7 @@ if (record && code === 0) {
   const timeline =
     captures
       .map((frame, index) => {
-        const duration =
-          ((captures[index + 1]?.at ?? frame.at + 100) - frame.at) / 1000;
+        const duration = ((captures[index + 1]?.at ?? frame.at + 100) - frame.at) / 1000;
         return `file '${frame.name}'\nduration ${duration.toFixed(3)}`;
       })
       .join("\n") + `\nfile '${captures.at(-1)?.name}'\n`;
@@ -147,10 +112,7 @@ if (record && code === 0) {
   );
   const gif = resolve(`docs/assets/${example}.gif`);
   await mkdir(resolve("docs/assets"), { recursive: true });
-  await copyFile(
-    resolve(output, "browser.mp4"),
-    resolve(`docs/assets/${example}.mp4`),
-  );
+  await copyFile(resolve(output, "browser.mp4"), resolve(`docs/assets/${example}.mp4`));
   await exec(
     "ffmpeg",
     [

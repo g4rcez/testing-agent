@@ -19,10 +19,7 @@ test("preserves original intent and all steps while selecting only the current s
   });
   const request = makeRequest(input, 1, observation, []);
   expect(request.questions.operation).toMatchObject({
-    instructions: {
-      original_request: input.prompt,
-      goal: "Open the result",
-    },
+    instructions: { original_request: input.prompt, goal: "Open the result" },
   });
   expect(request.state.task).toEqual({
     prompt: input.prompt,
@@ -32,30 +29,12 @@ test("preserves original intent and all steps while selecting only the current s
   });
 });
 test("rejects invented targets and invalid probability distributions", () => {
+  expect(() => validateChoice({ choice: "evil", probabilities: { e1: 1 }, confidence: 1 }, ["e1"])).toThrow();
   expect(() =>
-    validateChoice(
-      { choice: "evil", probabilities: { e1: 1 }, confidence: 1 },
-      ["e1"],
-    ),
+    validateChoice({ choice: "e1", probabilities: { e1: 0.2, e2: 0.8 }, confidence: 1 }, ["e1", "e2"]),
   ).toThrow();
-  expect(() =>
-    validateChoice(
-      { choice: "e1", probabilities: { e1: 0.2, e2: 0.8 }, confidence: 1 },
-      ["e1", "e2"],
-    ),
-  ).toThrow();
-  expect(() =>
-    validateChoice(
-      { choice: "e1", probabilities: { e1: Number.NaN }, confidence: 1 },
-      ["e1"],
-    ),
-  ).toThrow();
-  expect(
-    validateChoice(
-      { choice: "e1", probabilities: { e1: 1 }, confidence: 0.8 },
-      ["e1"],
-    ).choice,
-  ).toBe("e1");
+  expect(() => validateChoice({ choice: "e1", probabilities: { e1: Number.NaN }, confidence: 1 }, ["e1"])).toThrow();
+  expect(validateChoice({ choice: "e1", probabilities: { e1: 1 }, confidence: 0.8 }, ["e1"]).choice).toBe("e1");
 });
 
 test("only the current step's actions are sent as recent actions", () => {
@@ -70,9 +49,7 @@ test("only the current step's actions are sent as recent actions", () => {
     { operation: "TYPE_TEXT", target: "Old", stepIndex: 0 },
     { operation: "CLICK", target: "Now", stepIndex: 1 },
   ]);
-  expect(request.state.recent_actions).toEqual([
-    { action: "Now", kind: "click" },
-  ]);
+  expect(request.state.recent_actions).toEqual([{ action: "Now", kind: "click" }]);
 });
 
 test("an assumption needs its distinctive words visible on the page", async () => {
@@ -80,20 +57,8 @@ test("an assumption needs its distinctive words visible on the page", async () =
   const page: Observation = {
     ...observation,
     text: "Main Page Welcome",
-    elements: [
-      {
-        index: "e1",
-        label: "Search Wikipedia",
-        role: "searchbox",
-        value: "IPv4",
-        operations: ["TYPE_TEXT"],
-      },
-    ],
+    elements: [{ index: "e1", label: "Search Wikipedia", role: "searchbox", value: "IPv4", operations: ["TYPE_TEXT"] }],
   };
-  expect(
-    assumptionGrounded("The Search Wikipedia box contains IPv4", page),
-  ).toBe(true);
-  expect(
-    assumptionGrounded("The Search Wikipedia box contains Spider-Man", page),
-  ).toBe(false);
+  expect(assumptionGrounded("The Search Wikipedia box contains IPv4", page)).toBe(true);
+  expect(assumptionGrounded("The Search Wikipedia box contains Spider-Man", page)).toBe(false);
 });

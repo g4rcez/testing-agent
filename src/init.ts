@@ -16,10 +16,7 @@ const example = {
     },
     {
       instruction: "Press Enter in the Search Wikipedia box to search",
-      expect: {
-        url: "https://en.wikipedia.org/wiki/IPv6",
-        text: "Internet Protocol version 6",
-      },
+      expect: { url: "https://en.wikipedia.org/wiki/IPv6", text: "Internet Protocol version 6" },
     },
   ],
 };
@@ -42,9 +39,7 @@ steps:
 `;
 
 export function exampleTest(format: InitFormat): string {
-  return format === "json"
-    ? JSON.stringify(example, null, 2) + "\n"
-    : exampleYaml;
+  return format === "json" ? JSON.stringify(example, null, 2) + "\n" : exampleYaml;
 }
 
 export type InitOptions = {
@@ -55,11 +50,7 @@ export type InitOptions = {
   cwd?: string;
 };
 
-export type InitResult = {
-  folder: string;
-  created: string[];
-  skipped: string[];
-};
+export type InitResult = { folder: string; created: string[]; skipped: string[] };
 
 async function askLine(question: string): Promise<string> {
   process.stderr.write(question);
@@ -67,9 +58,7 @@ async function askLine(question: string): Promise<string> {
   return "";
 }
 
-export async function initTests(
-  options: InitOptions = {},
-): Promise<InitResult> {
+export async function initTests(options: InitOptions = {}): Promise<InitResult> {
   const format = options.format ?? "yaml";
   const interactive = Boolean(process.stdin.isTTY && process.stderr.isTTY);
   let folder = options.folder;
@@ -83,8 +72,7 @@ export async function initTests(
   }
   const directory = resolve(options.cwd ?? process.cwd(), folder);
   const existing = await stat(directory).catch(() => undefined);
-  if (existing && !existing.isDirectory())
-    throw new Error(`${folder} exists and is not a folder`);
+  if (existing && !existing.isDirectory()) throw new Error(`${folder} exists and is not a folder`);
   await mkdir(directory, { recursive: true });
   const file = join(directory, `example.test.${format}`);
   const result: InitResult = { folder, created: [], skipped: [] };

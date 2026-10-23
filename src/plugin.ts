@@ -1,24 +1,8 @@
 import { Browser } from "./browser.ts";
-import {
-  capabilities,
-  contextSchema,
-  envelopeSchema,
-  PROTOCOL,
-  resumeSchema,
-  runSchema,
-} from "./contracts.ts";
-import {
-  cancelRun,
-  recoverRun,
-  loadRun,
-  resumeRun,
-  startRun,
-  summarize,
-} from "./runner.ts";
+import { capabilities, contextSchema, envelopeSchema, PROTOCOL, resumeSchema, runSchema } from "./contracts.ts";
+import { cancelRun, recoverRun, loadRun, resumeRun, startRun, summarize } from "./runner.ts";
 
-export async function handlePlugin(
-  input: unknown,
-): Promise<Record<string, unknown>> {
+export async function handlePlugin(input: unknown): Promise<Record<string, unknown>> {
   const envelope = envelopeSchema.parse(input);
   if (envelope.type === "plugin.manifest") {
     return {
@@ -27,8 +11,7 @@ export async function handlePlugin(
       manifest: {
         name: "jev",
         capabilities,
-        description:
-          "Follow ordered app instructions using Jev or Laya decisions and agent-browser.",
+        description: "Follow ordered app instructions using Jev or Laya decisions and agent-browser.",
       },
     };
   }
@@ -38,22 +21,16 @@ export async function handlePlugin(
       data = summarize(await startRun(runSchema.parse(envelope.request)));
       break;
     case "agent.resume":
-      data = summarize(
-        await resumeRun(resumeSchema.parse(envelope.request).runId),
-      );
+      data = summarize(await resumeRun(resumeSchema.parse(envelope.request).runId));
       break;
     case "agent.status":
-      data = summarize(
-        await loadRun(resumeSchema.parse(envelope.request).runId),
-      );
+      data = summarize(await loadRun(resumeSchema.parse(envelope.request).runId));
       break;
     case "agent.cancel":
       data = await cancelRun(resumeSchema.parse(envelope.request).runId);
       break;
     case "agent.recover":
-      data = summarize(
-        await recoverRun(resumeSchema.parse(envelope.request).runId),
-      );
+      data = summarize(await recoverRun(resumeSchema.parse(envelope.request).runId));
       break;
     case "agent.context": {
       const { session } = contextSchema.parse(envelope.request);

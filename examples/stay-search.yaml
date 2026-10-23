@@ -10,19 +10,19 @@ steps:
   - instruction: Enter Lisbon in Destination
     value: Lisbon
     expect:
-      selector: '[name=destination]'
+      selector: "[name=destination]"
       value: Lisbon
   - instruction: Choose Design in Category
     expect:
-      selector: '[name=category]'
+      selector: "[name=category]"
       value: Design
   - instruction: Enable free cancellation
     expect:
-      selector: '[name=cancellation]'
+      selector: "[name=cancellation]"
       checked: true
   - instruction: Submit Find stays
     expect:
       text: 1 matching stay
   - Open Casa Flora
 expect:
-  - text: 'Applied filters: Lisbon / Design / cancellation enabled'
+  - text: "Applied filters: Lisbon / Design / cancellation enabled"

@@ -4,13 +4,7 @@
       "name": "jev",
       "command": "bun",
       "args": ["./src/plugin.ts"],
-      "capabilities": [
-        "command.run",
-        "agent.run",
-        "agent.resume",
-        "agent.status",
-        "agent.context"
-      ]
+      "capabilities": ["command.run", "agent.run", "agent.resume", "agent.status", "agent.context"]
     }
   ]
 }

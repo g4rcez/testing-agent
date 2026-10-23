@@ -2,15 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import {
-  BrowserCommandRejectedError,
-  StaleDecisionError,
-} from "../../src/browser.ts";
-import {
-  runSchema,
-  type Decision,
-  type Observation,
-} from "../../src/contracts.ts";
+import { BrowserCommandRejectedError, StaleDecisionError } from "../../src/browser.ts";
+import { runSchema, type Decision, type Observation } from "../../src/contracts.ts";
 import {
   resumeRun,
   recoverRun,
@@ -52,11 +45,7 @@ const observed = (fingerprint = "a", tree = "App"): Observation => ({
   targets: {},
   elements: [],
 });
-const decision = (operation: string): Decision => ({
-  operation,
-  target: undefined,
-  confidence: 1,
-});
+const decision = (operation: string): Decision => ({ operation, target: undefined, confidence: 1 });
 
 test("resumes the same ordered steps without repeating acknowledged browser input", async () => {
   let actions = 0;
@@ -80,27 +69,18 @@ test("resumes the same ordered steps without repeating acknowledged browser inpu
     },
     decide: async (_input, index) => {
       chosenSteps.push(index);
-      return decision(
-        actions > index ? "DONE" : index === 0 ? "CHECK" : "CLICK",
-      );
+      return decision(actions > index ? "DONE" : index === 0 ? "CHECK" : "CLICK");
     },
     fieldValue: async () => "unused",
   };
-  const first = await startRun(
-    { ...input(), recordVideo: true, browser: { args: { headed: false } } },
-    dependencies,
-  );
+  const first = await startRun({ ...input(), recordVideo: true, browser: { args: { headed: false } } }, dependencies);
   expect(first.status).toBe("paused");
-  expect(commands.map((args) => args.slice(0, 2))).toEqual([
-    ["record", "start"],
-  ]);
+  expect(commands.map((args) => args.slice(0, 2))).toEqual([["record", "start"]]);
   const second = await resumeRun(first.runId, dependencies);
   expect(second.status).toBe("paused");
   const final = await resumeRun(first.runId, dependencies);
   expect(final.status).toBe("completed");
-  expect(final.completedSteps.map((step) => step.instruction)).toEqual(
-    input().steps.map((step) => step.instruction),
-  );
+  expect(final.completedSteps.map((step) => step.instruction)).toEqual(input().steps.map((step) => step.instruction));
   expect(chosenSteps).toEqual([0, 0, 1, 1]);
   expect(executed).toEqual(["CHECK", "CLICK"]);
   await resumeRun(first.runId, dependencies);
@@ -111,10 +91,7 @@ test("resumes the same ordered steps without repeating acknowledged browser inpu
   ]);
   expect(final.video?.status).toBe("saved");
   expect(summarize(final).passed).toBe(true);
-  expect(summarize(final).steps.map((step) => step.status)).toEqual([
-    "passed",
-    "passed",
-  ]);
+  expect(summarize(final).steps.map((step) => step.status)).toEqual(["passed", "passed"]);
 });
 
 test("recording start/stop failures never report a passed test", async () => {
@@ -145,12 +122,7 @@ test("uncertain video startup cleans only a newly generated session", async () =
   for (const kind of ["new", "reused", "rejected"] as const) {
     const commands: string[][] = [];
     const result = await startRun(
-      {
-        ...input(),
-        session: kind === "reused" ? "unit" : undefined,
-        url: "https://example.com",
-        recordVideo: true,
-      },
+      { ...input(), session: kind === "reused" ? "unit" : undefined, url: "https://example.com", recordVideo: true },
       {
         browser: () => ({
           command: async (args) => {
@@ -170,9 +142,7 @@ test("uncertain video startup cleans only a newly generated session", async () =
     );
     expect(result.status).toBe("blocked");
     expect(result.video?.status).toBe("failed");
-    expect(commands.filter((args) => args[1] === "stop")).toHaveLength(
-      kind === "new" ? 1 : 0,
-    );
+    expect(commands.filter((args) => args[1] === "stop")).toHaveLength(kind === "new" ? 1 : 0);
     if (kind === "reused") expect(result.video?.error).toContain("manually");
   }
 });
@@ -180,30 +150,17 @@ test("uncertain video startup cleans only a newly generated session", async () =
 test("cancellation during video startup preserves cancelled status and cleans the owned recording", async () => {
   const commands: string[][] = [];
   const result = await startRun(
-    {
-      ...input(),
-      session: undefined,
-      url: "https://example.com",
-      recordVideo: true,
-    },
+    { ...input(), session: undefined, url: "https://example.com", recordVideo: true },
     {
       browser: (_session, _deadline, signal) => ({
         command: async (args) => {
           commands.push(args);
           if (args[1] === "start") {
-            if (!signal || !args[2])
-              throw new Error("Missing recording context");
+            if (!signal || !args[2]) throw new Error("Missing recording context");
             const aborted = new Promise<never>((_resolve, reject) =>
-              signal.addEventListener(
-                "abort",
-                () => reject(new Error("Aborted")),
-                { once: true },
-              ),
+              signal.addEventListener("abort", () => reject(new Error("Aborted")), { once: true }),
             );
-            await Bun.write(
-              join(directory, basename(args[2], ".mp4") + ".cancel"),
-              "1",
-            );
+            await Bun.write(join(directory, basename(args[2], ".mp4") + ".cancel"), "1");
             return aborted;
           }
           expect(signal).toBeUndefined();
@@ -273,10 +230,7 @@ test("paused cancellation finalizes video with an independent cleanup signal", a
     decide: async () => decision("CLICK"),
     fieldValue: async () => "unused",
   };
-  const paused = await startRun(
-    { ...input(), recordVideo: true },
-    dependencies,
-  );
+  const paused = await startRun({ ...input(), recordVideo: true }, dependencies);
   expect(paused.status).toBe("paused");
   const cancelled = await cancelRun(paused.runId, dependencies);
   expect(cancelled.status).toBe("cancelled");
@@ -288,19 +242,12 @@ test("paused cancellation finalizes video with an independent cleanup signal", a
 
 test("failed step output includes remaining skipped steps and preserves final assertion failure", async () => {
   const dependencies: RunnerDependencies = {
-    browser: () => ({
-      command: async () => ({}),
-      observe: async () => observed(),
-      execute: async () => {},
-    }),
+    browser: () => ({ command: async () => ({}), observe: async () => observed(), execute: async () => {} }),
     decide: async () => decision("BLOCKED"),
     fieldValue: async () => "unused",
   };
   const blocked = await startRun(input(), dependencies);
-  expect(summarize(blocked).steps.map((step) => step.status)).toEqual([
-    "failed",
-    "skipped",
-  ]);
+  expect(summarize(blocked).steps.map((step) => step.status)).toEqual(["failed", "skipped"]);
   const failed = await startRun(
     { ...input(), expect: [{ text: "Missing", timeoutMs: 0 }] },
     { ...dependencies, decide: async () => decision("DONE") },
@@ -334,15 +281,7 @@ test("discards a stale decision before any input", async () => {
 
 test("rejects premature DONE when an explicit completion assertion fails", async () => {
   const result = await startRun(
-    {
-      ...input(),
-      steps: [
-        {
-          instruction: "Open the result",
-          expect: { text: "Result details", timeoutMs: 0 },
-        },
-      ],
-    },
+    { ...input(), steps: [{ instruction: "Open the result", expect: { text: "Result details", timeoutMs: 0 } }] },
     {
       browser: () => ({
         command: async () => ({}),
@@ -399,10 +338,7 @@ test("recovery does not continue actions after an uncertain run finalized its vi
     decide: async () => decision("CLICK"),
     fieldValue: async () => "unused",
   };
-  const uncertain = await startRun(
-    { ...input(), recordVideo: true },
-    dependencies,
-  );
+  const uncertain = await startRun({ ...input(), recordVideo: true }, dependencies);
   expect(uncertain.status).toBe("uncertain");
   expect(uncertain.video?.status).toBe("saved");
   const recovered = await recoverRun(uncertain.runId, dependencies);
@@ -417,11 +353,7 @@ test("recovery does not continue actions after an uncertain run finalized its vi
 
 test("detects a process interrupted after persisting its input intent", async () => {
   const dependencies: RunnerDependencies = {
-    browser: () => ({
-      command: async () => ({}),
-      observe: async () => observed(),
-      execute: async () => {},
-    }),
+    browser: () => ({ command: async () => ({}), observe: async () => observed(), execute: async () => {} }),
     decide: async () => decision("BLOCKED"),
     fieldValue: async () => "unused",
   };
@@ -440,12 +372,7 @@ test("detects a process interrupted after persisting its input intent", async ()
 test("can accept DONE after the last permitted action", async () => {
   let executed = 0;
   const result = await startRun(
-    {
-      ...input(),
-      steps: [{ instruction: "Open result" }],
-      maxActions: 1,
-      actionsPerCall: 2,
-    },
+    { ...input(), steps: [{ instruction: "Open result" }], maxActions: 1, actionsPerCall: 2 },
     {
       browser: () => ({
         command: async () => ({}),
@@ -484,21 +411,10 @@ for (const kind of ["call", "total"] as const) {
             throw new Error("No input expected");
           },
         }),
-        decide: async (
-          _input,
-          _index,
-          _observed,
-          _history,
-          _deadline,
-          signal,
-        ) =>
+        decide: async (_input, _index, _observed, _history, _deadline, signal) =>
           new Promise((_resolve, reject) => {
             if (!signal) throw new Error("Missing cancellation signal");
-            signal.addEventListener(
-              "abort",
-              () => reject(new Error("Aborted")),
-              { once: true },
-            );
+            signal.addEventListener("abort", () => reject(new Error("Aborted")), { once: true });
           }),
         fieldValue: async () => "unused",
       },
@@ -506,9 +422,7 @@ for (const kind of ["call", "total"] as const) {
     expect(result.status).toBe(kind === "call" ? "paused" : "failed");
     expect(result.actions).toHaveLength(0);
     expect(result.video?.status).toBe(kind === "call" ? "recording" : "saved");
-    expect(commands.filter((args) => args[1] === "stop")).toHaveLength(
-      kind === "call" ? 0 : 1,
-    );
+    expect(commands.filter((args) => args[1] === "stop")).toHaveLength(kind === "call" ? 0 : 1);
   }, 5000);
 }
 
@@ -533,13 +447,7 @@ test("a step completes once the model confirms its assumption about the page", a
   const state = await startRun(
     runSchema.parse({
       prompt: "Search",
-      steps: [
-        {
-          instruction: "Type IPv6 into the search box",
-          value: "IPv6",
-          assume: "The search box contains IPv6",
-        },
-      ],
+      steps: [{ instruction: "Type IPv6 into the search box", value: "IPv6", assume: "The search box contains IPv6" }],
       backend: { provider: "laya" },
       session: "unit",
       expect: [{ text: "App", timeoutMs: 0 }],
@@ -547,11 +455,6 @@ test("a step completes once the model confirms its assumption about the page", a
     dependencies,
   );
   expect(asked).toEqual(["The search box contains IPv6"]);
-  expect(state.completedSteps).toEqual([
-    {
-      instruction: "Type IPv6 into the search box",
-      verification: "assumption",
-    },
-  ]);
+  expect(state.completedSteps).toEqual([{ instruction: "Type IPv6 into the search box", verification: "assumption" }]);
   expect(state.status).toBe("completed");
 });

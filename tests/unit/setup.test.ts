@@ -1,11 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  formatManual,
-  planSetup,
-  runSetup,
-  type Manager,
-  type SetupEnv,
-} from "../../src/setup.ts";
+import { formatManual, planSetup, runSetup, type Manager, type SetupEnv } from "../../src/setup.ts";
 
 const env = (
   platform: NodeJS.Platform,
@@ -17,12 +11,10 @@ const env = (
   manager,
   root,
   has: (command) => installed.includes(command) || command === "sudo",
-  version: (command) =>
-    command === "bun" ? "1.3.14" : command === "node" ? "v22.1.0" : undefined,
+  version: (command) => (command === "bun" ? "1.3.14" : command === "node" ? "v22.1.0" : undefined),
 });
 
-const commands = (value: SetupEnv) =>
-  planSetup(value).flatMap((step) => step.commands);
+const commands = (value: SetupEnv) => planSetup(value).flatMap((step) => step.commands);
 const missing = (value: SetupEnv) =>
   planSetup(value)
     .filter((step) => !step.present)
@@ -35,18 +27,10 @@ test("macOS uses Homebrew and offers to install it when missing", () => {
 });
 
 test("Linux adapts to the package manager and prefixes sudo for non-root", () => {
-  expect(commands(env("linux", "apt"))).toContain(
-    "sudo apt-get install -y ffmpeg",
-  );
-  expect(commands(env("linux", "pacman", [], true))).toContain(
-    "pacman -S --noconfirm ffmpeg",
-  );
-  expect(commands(env("linux", "dnf"))).toContain(
-    "sudo dnf install -y ffmpeg-free",
-  );
-  expect(commands(env("linux", "apt"))).toContain(
-    "agent-browser install --with-deps",
-  );
+  expect(commands(env("linux", "apt"))).toContain("sudo apt-get install -y ffmpeg");
+  expect(commands(env("linux", "pacman", [], true))).toContain("pacman -S --noconfirm ffmpeg");
+  expect(commands(env("linux", "dnf"))).toContain("sudo dnf install -y ffmpeg-free");
+  expect(commands(env("linux", "apt"))).toContain("agent-browser install --with-deps");
 });
 
 test("Windows uses winget and the PowerShell Bun installer", () => {
@@ -58,9 +42,7 @@ test("Windows uses winget and the PowerShell Bun installer", () => {
 test("installed tools are skipped and old Bun is upgraded", () => {
   const ready = env("linux", "apt", ["bun", "node", "ffmpeg", "agent-browser"]);
   expect(missing(ready)).toEqual(["agent-browser install --with-deps"]);
-  expect(missing({ ...ready, version: () => "1.2.0" })).toContain(
-    "bun upgrade",
-  );
+  expect(missing({ ...ready, version: () => "1.2.0" })).toContain("bun upgrade");
 });
 
 test("manual output lists commands without running anything", () => {

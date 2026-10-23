@@ -3,16 +3,11 @@ import type { Assertion } from "./contracts.ts";
 
 export const assertionResultSchema = z.object({
   passed: z.boolean(),
-  checks: z.array(
-    z.object({ passed: z.boolean(), index: z.number(), message: z.string() }),
-  ),
+  checks: z.array(z.object({ passed: z.boolean(), index: z.number(), message: z.string() })),
 });
 export type AssertionResult = z.infer<typeof assertionResultSchema>;
 
-function assertInPage(
-  assertions: Assertion[],
-  timeoutMs: number,
-): Promise<AssertionResult> {
+function assertInPage(assertions: Assertion[], timeoutMs: number): Promise<AssertionResult> {
   return new Promise((resolve) => {
     const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
     let observer: MutationObserver | undefined;
@@ -21,34 +16,18 @@ function assertInPage(
       assertions.map((assertion, index) => {
         try {
           let passed =
-            (assertion.text === undefined ||
-              normalize(document.body.innerText).includes(
-                normalize(assertion.text),
-              )) &&
+            (assertion.text === undefined || normalize(document.body.innerText).includes(normalize(assertion.text))) &&
             (assertion.url === undefined || location.href === assertion.url);
           if (assertion.selector !== undefined) {
-            const elements = Array.from(
-              document.querySelectorAll(assertion.selector),
-            );
-            if (assertion.count !== undefined)
-              passed &&= elements.length === assertion.count;
-            else if (assertion.visible !== false)
-              passed &&= elements.length === 1;
+            const elements = Array.from(document.querySelectorAll(assertion.selector));
+            if (assertion.count !== undefined) passed &&= elements.length === assertion.count;
+            else if (assertion.visible !== false) passed &&= elements.length === 1;
             if (assertion.visible !== undefined)
               passed &&= assertion.visible
                 ? elements.length > 0 &&
-                  elements.every((element) =>
-                    element.checkVisibility({
-                      checkOpacity: true,
-                      checkVisibilityCSS: true,
-                    }),
-                  )
+                  elements.every((element) => element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
                 : elements.every(
-                    (element) =>
-                      !element.checkVisibility({
-                        checkOpacity: true,
-                        checkVisibilityCSS: true,
-                      }),
+                    (element) => !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
                   );
             if (assertion.value !== undefined)
               passed &&=
@@ -62,22 +41,11 @@ function assertInPage(
                 elements.length === 1 &&
                 (elements[0] instanceof HTMLInputElement
                   ? elements[0].checked === assertion.checked
-                  : elements[0]?.getAttribute("aria-checked") ===
-                    String(assertion.checked));
+                  : elements[0]?.getAttribute("aria-checked") === String(assertion.checked));
           }
-          return {
-            index,
-            passed,
-            message: passed
-              ? "Assertion passed"
-              : "Expected frontend state was not observed",
-          };
+          return { index, passed, message: passed ? "Assertion passed" : "Expected frontend state was not observed" };
         } catch {
-          return {
-            index,
-            passed: false,
-            message: "Invalid or unsupported assertion selector",
-          };
+          return { index, passed: false, message: "Invalid or unsupported assertion selector" };
         }
       });
     const finish = (checks: AssertionResult["checks"]) => {
@@ -114,9 +82,6 @@ function assertInPage(
   });
 }
 
-export function assertionExpression(
-  assertions: Assertion[],
-  timeoutMs: number,
-): string {
+export function assertionExpression(assertions: Assertion[], timeoutMs: number): string {
   return `(${assertInPage.toString()})(${JSON.stringify(assertions)},${timeoutMs})`;
 }

@@ -38,13 +38,13 @@ Later publications and repair-only retries do not receive the bootstrap token, e
 
 After bootstrap, configure [npm trusted publishing](https://docs.npmjs.com/trusted-publishers) in the **testing-agent** package settings:
 
-| Field | Value |
-| --- | --- |
-| Organization or user | `g4rcez` |
-| Repository | `testing-agent` |
-| Workflow filename | `ci.yml` |
-| Environment | Leave blank |
-| Allowed actions | Direct `npm publish` |
+| Field                | Value                |
+| -------------------- | -------------------- |
+| Organization or user | `g4rcez`             |
+| Repository           | `testing-agent`      |
+| Workflow filename    | `ci.yml`             |
+| Environment          | Leave blank          |
+| Allowed actions      | Direct `npm publish` |
 
 CI uses GitHub-hosted Ubuntu, Node 24, and `id-token: write`. npm requires Node 22.14.0+ and npm 11.5.1+. OIDC permission also supports provenance signing for token-authenticated bootstrap. GitHub Release access uses the separate job-scoped `GH_TOKEN` with `contents: write`.
 

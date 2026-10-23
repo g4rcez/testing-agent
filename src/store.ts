@@ -1,15 +1,12 @@
 import { Database } from "bun:sqlite";
-import { chmod, mkdir, open, readFile, rename } from "node:fs/promises";
+import { chmod, mkdir, open, rename } from "node:fs/promises";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { z } from "zod";
 
-export const stateRoot = () =>
-  resolve(process.env.JEV_STATE_DIR ?? ".agent-browser-jev");
-export const statePath = (runId: string) =>
-  resolve(stateRoot(), `${z.uuid().parse(runId)}.json`);
-export const cancelPath = (runId: string) =>
-  resolve(stateRoot(), `${z.uuid().parse(runId)}.cancel`);
+export const stateRoot = () => resolve(process.env.JEV_STATE_DIR ?? ".agent-browser-jev");
+export const statePath = (runId: string) => resolve(stateRoot(), `${z.uuid().parse(runId)}.json`);
+export const cancelPath = (runId: string) => resolve(stateRoot(), `${z.uuid().parse(runId)}.cancel`);
 
 export async function requestCancellation(runId: string): Promise<void> {
   const file = await open(cancelPath(runId), "r+");
@@ -41,22 +38,12 @@ export async function atomicWrite(path: string, value: unknown): Promise<void> {
 }
 
 export async function readState(runId: string): Promise<unknown> {
-  return JSON.parse(await readFile(statePath(runId), "utf8"));
+  return Bun.file(statePath(runId)).json();
 }
 
-type Owner = {
-  session: string;
-  run_id: string;
-  token: string;
-  pid: number;
-  host: string;
-};
+type Owner = { session: string; run_id: string; token: string; pid: number; host: string };
 export class SessionBusyError extends Error {}
-export async function acquireSession(
-  session: string,
-  runId: string,
-  recover = false,
-): Promise<() => void> {
+export async function acquireSession(session: string, runId: string, recover = false): Promise<() => void> {
   await mkdir(stateRoot(), { recursive: true, mode: 0o700 });
   const path = resolve(stateRoot(), "locks.sqlite");
   const db = new Database(path, { create: true, strict: true });
@@ -67,38 +54,28 @@ export async function acquireSession(
   const token = crypto.randomUUID();
   try {
     db.transaction(() => {
-      const owner = db
-        .query<Owner, [string]>("SELECT * FROM session_locks WHERE session = ?")
-        .get(session);
+      const owner = db.query<Owner, [string]>("SELECT * FROM session_locks WHERE session = ?").get(session);
       if (owner) {
         let alive = true;
         if (owner.host === hostname()) {
           try {
             process.kill(owner.pid, 0);
           } catch (error) {
-            if (
-              error instanceof Error &&
-              "code" in error &&
-              error.code === "ESRCH"
-            )
-              alive = false;
+            if (error instanceof Error && "code" in error && error.code === "ESRCH") alive = false;
           }
         }
-        if (alive)
-          throw new SessionBusyError(
-            "Browser session is owned by a live process",
-          );
+        if (alive) throw new SessionBusyError("Browser session is owned by a live process");
         if (!recover || owner.run_id !== runId)
-          throw new Error(
-            `Interrupted owner detected; use agent.recover for run ${owner.run_id}`,
-          );
-        db.query(
-          "DELETE FROM session_locks WHERE session = ? AND token = ?",
-        ).run(session, owner.token);
+          throw new Error(`Interrupted owner detected; use agent.recover for run ${owner.run_id}`);
+        db.query("DELETE FROM session_locks WHERE session = ? AND token = ?").run(session, owner.token);
       }
-      db.query(
-        "INSERT INTO session_locks (session, run_id, token, pid, host) VALUES (?, ?, ?, ?, ?)",
-      ).run(session, runId, token, process.pid, hostname());
+      db.query("INSERT INTO session_locks (session, run_id, token, pid, host) VALUES (?, ?, ?, ?, ?)").run(
+        session,
+        runId,
+        token,
+        process.pid,
+        hostname(),
+      );
     }).immediate();
   } catch (error) {
     db.close();
@@ -106,10 +83,7 @@ export async function acquireSession(
   }
   return () => {
     try {
-      db.query("DELETE FROM session_locks WHERE session = ? AND token = ?").run(
-        session,
-        token,
-      );
+      db.query("DELETE FROM session_locks WHERE session = ? AND token = ?").run(session, token);
     } finally {
       db.close();
     }

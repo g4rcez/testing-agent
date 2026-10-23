@@ -32,11 +32,7 @@ test("the npm bootstrap secret reaches only the initial unpublished 0.0.1 publis
     NODE_AUTH_TOKEN: "unrelated-fixture",
   };
   expect(
-    npmPublishEnvironment(environment, {
-      version: "0.0.1",
-      previousTag: undefined,
-      registryExists: false,
-    }),
+    npmPublishEnvironment(environment, { version: "0.0.1", previousTag: undefined, registryExists: false }),
   ).toEqual({ PATH: "/tools", NODE_AUTH_TOKEN: "bootstrap-fixture" });
   for (const release of [
     undefined,
@@ -45,15 +41,10 @@ test("the npm bootstrap secret reaches only the initial unpublished 0.0.1 publis
     { version: "0.0.2", previousTag: "v0.0.1", registryExists: true },
     { version: "0.1.0", previousTag: undefined, registryExists: false },
   ])
-    expect(npmPublishEnvironment(environment, release)).toEqual({
-      PATH: "/tools",
-    });
+    expect(npmPublishEnvironment(environment, release)).toEqual({ PATH: "/tools" });
   expect(environment.BOOTSTRAP_NPM_TOKEN).toBe("bootstrap-fixture");
   expect(
-    npmPublishEnvironment(
-      { PATH: "/tools" },
-      { version: "0.0.1", previousTag: undefined, registryExists: false },
-    ),
+    npmPublishEnvironment({ PATH: "/tools" }, { version: "0.0.1", previousTag: undefined, registryExists: false }),
   ).toEqual({ PATH: "/tools" });
 });
 
@@ -62,24 +53,12 @@ test("a package rename keeps Git version history but starts a new npm reconcilia
   expect(publicationBaseline("v0.0.2", "testing-agent")).toBe("0.0.2");
   expect(() => publicationBaseline("v0.0.1", "unexpected-package")).toThrow();
   const baseline = publicationBaseline("v0.0.1", "agent-tester");
-  expect(
-    pendingRelease(baseline, undefined, "rename-revision"),
-  ).toBeUndefined();
+  expect(pendingRelease(baseline, undefined, "rename-revision")).toBeUndefined();
   expect(nextVersion("0.0.1", ["fix: Rename the package"])).toBe("0.0.2");
-  expect(
-    pendingRelease(
-      baseline,
-      { "0.0.2": { gitHead: "rename-revision" } },
-      "rename-revision",
-    ),
-  ).toBe("0.0.2");
-  expect(() =>
-    pendingRelease(
-      baseline,
-      { "0.0.2": { gitHead: "rename-revision" } },
-      "other-revision",
-    ),
-  ).toThrow("awaiting GitHub");
+  expect(pendingRelease(baseline, { "0.0.2": { gitHead: "rename-revision" } }, "rename-revision")).toBe("0.0.2");
+  expect(() => pendingRelease(baseline, { "0.0.2": { gitHead: "rename-revision" } }, "other-revision")).toThrow(
+    "awaiting GitHub",
+  );
   const environment = { BOOTSTRAP_NPM_TOKEN: "fixture" };
   expect(
     npmPublishEnvironment(environment, {
@@ -108,9 +87,7 @@ test("a package rename keeps Git version history but starts a new npm reconcilia
 });
 
 test("first release is always 0.0.1", () => {
-  expect(nextVersion(undefined, ["feat!: Initial implementation"])).toBe(
-    "0.0.1",
-  );
+  expect(nextVersion(undefined, ["feat!: Initial implementation"])).toBe("0.0.1");
 });
 
 test("Conventional Commits choose the highest explicit release increment", () => {
@@ -139,85 +116,41 @@ test("npm command success is not proof of a public, matching publication", async
     dist: { integrity: "sha512-expected" },
   };
   const verify = (body: unknown, status = 200) =>
-    verifyNpmPublication("0.0.1", "revision", "sha512-expected", async () =>
-      Response.json(body, { status }),
-    );
+    verifyNpmPublication("0.0.1", "revision", "sha512-expected", async () => Response.json(body, { status }));
   await expect(verify(artifact)).resolves.toBeUndefined();
   await expect(verify("version not found", 404)).rejects.toThrow("staged");
   await expect(verify({}, 503)).rejects.toThrow("not publicly available");
-  await expect(
-    verify({ ...artifact, version: "0.0.0-stage" }),
-  ).rejects.toThrow();
-  await expect(verify({ ...artifact, gitHead: "different" })).rejects.toThrow(
+  await expect(verify({ ...artifact, version: "0.0.0-stage" })).rejects.toThrow();
+  await expect(verify({ ...artifact, gitHead: "different" })).rejects.toThrow("different revision or artifact");
+  await expect(verify({ ...artifact, dist: { integrity: "sha512-different" } })).rejects.toThrow(
     "different revision or artifact",
   );
-  await expect(
-    verify({ ...artifact, dist: { integrity: "sha512-different" } }),
-  ).rejects.toThrow("different revision or artifact");
 });
 
 test("release retries require the exact published revision and artifact", () => {
-  const published = {
-    gitHead: "revision",
-    dist: { integrity: "sha512-expected" },
-  };
-  expect(() =>
-    assertPublishedArtifact(published, "revision", "sha512-expected"),
-  ).not.toThrow();
-  expect(() =>
-    assertPublishedArtifact(published, "other", "sha512-expected"),
-  ).toThrow();
-  expect(() =>
-    assertPublishedArtifact(published, "revision", "sha512-other"),
-  ).toThrow();
-  expect(() =>
-    assertPublishedArtifact({}, "revision", "sha512-expected"),
-  ).toThrow();
+  const published = { gitHead: "revision", dist: { integrity: "sha512-expected" } };
+  expect(() => assertPublishedArtifact(published, "revision", "sha512-expected")).not.toThrow();
+  expect(() => assertPublishedArtifact(published, "other", "sha512-expected")).toThrow();
+  expect(() => assertPublishedArtifact(published, "revision", "sha512-other")).toThrow();
+  expect(() => assertPublishedArtifact({}, "revision", "sha512-expected")).toThrow();
 });
 
 test("an npm publication without its GitHub release blocks both older and newer revisions", () => {
   const initial = { "0.0.1": { gitHead: "initial" } };
-  const featurePublishedFirst = {
-    ...initial,
-    "0.1.0": { gitHead: "feature-revision" },
-  };
-  expect(() =>
-    pendingRelease("0.0.1", featurePublishedFirst, "older-fix-revision"),
-  ).toThrow("awaiting GitHub");
-  expect(() =>
-    pendingRelease("0.0.1", featurePublishedFirst, "newer-revision"),
-  ).toThrow("awaiting GitHub");
-  expect(
-    pendingRelease("0.0.1", featurePublishedFirst, "feature-revision"),
-  ).toBe("0.1.0");
-  const fixPublishedFirst = {
-    ...initial,
-    "0.0.2": { gitHead: "fix-revision" },
-  };
-  expect(() =>
-    pendingRelease("0.0.1", fixPublishedFirst, "newer-feature-revision"),
-  ).toThrow("awaiting GitHub");
-  expect(pendingRelease("0.0.1", fixPublishedFirst, "fix-revision")).toBe(
-    "0.0.2",
-  );
-  expect(
-    pendingRelease("0.0.2", fixPublishedFirst, "newer-feature-revision"),
-  ).toBeUndefined();
-  expect(
-    pendingRelease(undefined, undefined, "first-revision"),
-  ).toBeUndefined();
-  expect(() =>
-    pendingRelease(undefined, { "0.0.0-stage": {} }, "other-revision"),
-  ).toThrow("staged");
-  expect(() => pendingRelease(undefined, {}, "other-revision")).toThrow(
-    "staged",
-  );
+  const featurePublishedFirst = { ...initial, "0.1.0": { gitHead: "feature-revision" } };
+  expect(() => pendingRelease("0.0.1", featurePublishedFirst, "older-fix-revision")).toThrow("awaiting GitHub");
+  expect(() => pendingRelease("0.0.1", featurePublishedFirst, "newer-revision")).toThrow("awaiting GitHub");
+  expect(pendingRelease("0.0.1", featurePublishedFirst, "feature-revision")).toBe("0.1.0");
+  const fixPublishedFirst = { ...initial, "0.0.2": { gitHead: "fix-revision" } };
+  expect(() => pendingRelease("0.0.1", fixPublishedFirst, "newer-feature-revision")).toThrow("awaiting GitHub");
+  expect(pendingRelease("0.0.1", fixPublishedFirst, "fix-revision")).toBe("0.0.2");
+  expect(pendingRelease("0.0.2", fixPublishedFirst, "newer-feature-revision")).toBeUndefined();
+  expect(pendingRelease(undefined, undefined, "first-revision")).toBeUndefined();
+  expect(() => pendingRelease(undefined, { "0.0.0-stage": {} }, "other-revision")).toThrow("staged");
+  expect(() => pendingRelease(undefined, {}, "other-revision")).toThrow("staged");
   expect(() => pendingRelease(undefined, initial, "other-revision")).toThrow();
   expect(() => pendingRelease("0.1.0", initial, "initial")).toThrow("baseline");
-  const numericallySorted = {
-    "0.0.9": { gitHead: "old" },
-    "0.0.10": { gitHead: "new" },
-  };
+  const numericallySorted = { "0.0.9": { gitHead: "old" }, "0.0.10": { gitHead: "new" } };
   expect(pendingRelease("0.0.9", numericallySorted, "new")).toBe("0.0.10");
 });
 
@@ -228,11 +161,7 @@ test("CI provisions native recording dependencies on both platforms before verif
         verify: z.object({
           "timeout-minutes": z.number(),
           steps: z.array(
-            z.object({
-              name: z.string().optional(),
-              run: z.string().optional(),
-              if: z.string().optional(),
-            }),
+            z.object({ name: z.string().optional(), run: z.string().optional(), if: z.string().optional() }),
           ),
         }),
       }),
@@ -240,23 +169,15 @@ test("CI provisions native recording dependencies on both platforms before verif
     .parse(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text()));
   expect(workflow.jobs.verify["timeout-minutes"]).toBe(30);
   const steps = workflow.jobs.verify.steps;
-  const linux = steps.findIndex(
-    (step) => step.name === "Install ffmpeg on Linux",
-  );
-  const macos = steps.findIndex(
-    (step) => step.name === "Install ffmpeg on macOS",
-  );
-  const verify = steps.findIndex(
-    (step) => step.name === "Verify video recording tools",
-  );
+  const linux = steps.findIndex((step) => step.name === "Install ffmpeg on Linux");
+  const macos = steps.findIndex((step) => step.name === "Install ffmpeg on macOS");
+  const verify = steps.findIndex((step) => step.name === "Verify video recording tools");
   const checks = steps.findIndex((step) => step.run === "bun run check");
   expect(linux).toBeGreaterThanOrEqual(0);
   expect(macos).toBeGreaterThanOrEqual(0);
   expect(steps[linux]?.if).toBe("runner.os == 'Linux'");
   expect(steps[macos]?.if).toBe("runner.os == 'macOS'");
-  expect(steps[linux]?.run).toContain(
-    "apt-get install --yes --no-install-recommends ffmpeg",
-  );
+  expect(steps[linux]?.run).toContain("apt-get install --yes --no-install-recommends ffmpeg");
   expect(steps[macos]?.run).toContain("brew install ffmpeg");
   expect(verify).toBeGreaterThan(linux);
   expect(verify).toBeGreaterThan(macos);
@@ -272,16 +193,11 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
       }),
       permissions: z.object({ contents: z.string() }),
       jobs: z.object({
-        verify: z.object({
-          strategy: z.object({ matrix: z.object({ os: z.array(z.string()) }) }),
-        }),
+        verify: z.object({ strategy: z.object({ matrix: z.object({ os: z.array(z.string()) }) }) }),
         release: z.object({
           needs: z.string(),
           if: z.string(),
-          permissions: z.object({
-            contents: z.string(),
-            "id-token": z.string(),
-          }),
+          permissions: z.object({ contents: z.string(), "id-token": z.string() }),
           concurrency: z.object({ "cancel-in-progress": z.boolean() }),
         }),
       }),
@@ -290,10 +206,7 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   expect(workflow.on.pull_request.branches).toEqual(["main"]);
   expect(workflow.on.push.branches).toEqual(["main"]);
   expect(workflow.permissions.contents).toBe("read");
-  expect(workflow.jobs.verify.strategy.matrix.os).toEqual([
-    "ubuntu-latest",
-    "macos-latest",
-  ]);
+  expect(workflow.jobs.verify.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
   const release = workflow.jobs.release;
   expect(release.needs).toBe("verify");
   expect(release.if).toContain("github.ref == 'refs/heads/main'");

@@ -43,8 +43,7 @@ export function pageBridge(request: PageRequest): unknown {
     snapshots: new Map(),
     receipts: new Map(),
   });
-  if (request.type === "receipt")
-    return registry.receipts.get(request.actionId) ?? null;
+  if (request.type === "receipt") return registry.receipts.get(request.actionId) ?? null;
   const roots: Array<Document | ShadowRoot> = [document];
   const nodes: HTMLElement[] = [];
   for (const root of roots)
@@ -65,21 +64,15 @@ export function pageBridge(request: PageRequest): unknown {
     !node.closest('[hidden],[inert],[aria-hidden="true"]') &&
     node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
   const disabled = (node: HTMLElement) =>
-    node.matches(":disabled") ||
-    Boolean(node.closest('[aria-disabled="true"],[inert]'));
-  const terminalInput = (
-    node: HTMLElement,
-  ): HTMLTextAreaElement | undefined => {
-    if (!node.matches('[role="group"][aria-roledescription="terminal"]'))
-      return;
+    node.matches(":disabled") || Boolean(node.closest('[aria-disabled="true"],[inert]'));
+  const terminalInput = (node: HTMLElement): HTMLTextAreaElement | undefined => {
+    if (!node.matches('[role="group"][aria-roledescription="terminal"]')) return;
     const inputs = node.querySelectorAll("textarea[aria-label]");
     const input = inputs[0];
     if (
       inputs.length === 1 &&
       input instanceof HTMLTextAreaElement &&
-      !input.closest(
-        '[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]',
-      ) &&
+      !input.closest('[hidden],[inert],[aria-hidden="true"],[aria-disabled="true"]') &&
       !input.disabled &&
       !input.readOnly
     )
@@ -91,9 +84,7 @@ export function pageBridge(request: PageRequest): unknown {
       .split(/\s+/)
       .filter(Boolean)
       .map((key) =>
-        root instanceof Document || root instanceof ShadowRoot
-          ? (root.getElementById(key)?.textContent ?? "")
-          : "",
+        root instanceof Document || root instanceof ShadowRoot ? (root.getElementById(key)?.textContent ?? "") : "",
       )
       .join(" ")
       .trim();
@@ -137,19 +128,13 @@ export function pageBridge(request: PageRequest): unknown {
               ? "button"
               : "");
   const fieldValue = (node: HTMLElement) =>
-    node instanceof HTMLInputElement ||
-    node instanceof HTMLTextAreaElement ||
-    node instanceof HTMLSelectElement
+    node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement || node instanceof HTMLSelectElement
       ? node.value
-      : (terminalInput(node)?.value ??
-        (node.isContentEditable ? (node.textContent ?? "") : ""));
+      : (terminalInput(node)?.value ?? (node.isContentEditable ? (node.textContent ?? "") : ""));
   const publicValue = (node: HTMLElement) =>
-    node instanceof HTMLInputElement && node.type === "password"
-      ? "<redacted>"
-      : fieldValue(node);
+    node instanceof HTMLInputElement && node.type === "password" ? "<redacted>" : fieldValue(node);
   const checked = (node: HTMLElement) =>
-    node instanceof HTMLInputElement &&
-    ["checkbox", "radio"].includes(node.type)
+    node instanceof HTMLInputElement && ["checkbox", "radio"].includes(node.type)
       ? String(node.checked)
       : node.getAttribute("aria-checked");
   const pageKey = () =>
@@ -167,18 +152,11 @@ export function pageBridge(request: PageRequest): unknown {
             node instanceof HTMLSelectElement ||
             node instanceof HTMLTextAreaElement,
         )
-        .map((node) => [
-          id(node),
-          fieldValue(node),
-          checked(node),
-          disabled(node),
-        ]),
+        .map((node) => [id(node), fieldValue(node), checked(node), disabled(node)]),
     ]);
   const terminalState = (node: HTMLElement) => {
     const input = terminalInput(node);
-    return input
-      ? [id(input), node.innerText.replace(/\s+/g, " ").slice(-12000)]
-      : null;
+    return input ? [id(input), node.innerText.replace(/\s+/g, " ").slice(-12000)] : null;
   };
   const guard = (node: HTMLElement) =>
     JSON.stringify([
@@ -204,24 +182,14 @@ export function pageBridge(request: PageRequest): unknown {
             Boolean(option.closest("optgroup[disabled]")),
           ])
         : null,
-      node
-        .closest('form,dialog,article,li,tr,[role="dialog"],[role="row"]')
-        ?.textContent?.slice(0, 6000) ??
+      node.closest('form,dialog,article,li,tr,[role="dialog"],[role="row"]')?.textContent?.slice(0, 6000) ??
         node.parentElement?.textContent?.slice(0, 2000),
     ]);
   const hit = (node: HTMLElement) => {
     const rect = node.getBoundingClientRect();
     const x = rect.x + rect.width / 2,
       y = rect.y + rect.height / 2;
-    if (
-      !rect.width ||
-      !rect.height ||
-      x < 0 ||
-      y < 0 ||
-      x >= innerWidth ||
-      y >= innerHeight
-    )
-      return false;
+    if (!rect.width || !rect.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
     let target = document.elementFromPoint(x, y);
     while (target?.shadowRoot) {
       const next = target.shadowRoot.elementFromPoint(x, y);
@@ -240,18 +208,12 @@ export function pageBridge(request: PageRequest): unknown {
     const oldReceipt = registry.receipts.get(request.actionId);
     if (oldReceipt) return oldReceipt;
     const snapshot = registry.snapshots.get(request.snapshotId);
-    if (!snapshot || snapshot.page !== pageKey())
-      return { status: "stale", reason: "document-or-form-changed" };
-    const bound = request.targetId
-      ? snapshot.targets.get(`${request.operation}:${request.targetId}`)
-      : undefined;
+    if (!snapshot || snapshot.page !== pageKey()) return { status: "stale", reason: "document-or-form-changed" };
+    const bound = request.targetId ? snapshot.targets.get(`${request.operation}:${request.targetId}`) : undefined;
     if (request.expectedSelector && bound) {
       try {
         if (!bound.node.matches(request.expectedSelector))
-          return {
-            status: "stale",
-            reason: "target-does-not-match-test-binding",
-          };
+          return { status: "stale", reason: "target-does-not-match-test-binding" };
       } catch {
         return { status: "stale", reason: "invalid-test-selector" };
       }
@@ -270,26 +232,10 @@ export function pageBridge(request: PageRequest): unknown {
     )
       return { status: "stale", reason: "target-changed-or-covered" };
     if (
-      ![
-        "CLICK",
-        "TYPE_TEXT",
-        "SELECT",
-        "CHECK",
-        "UNCHECK",
-        "PRESS_ENTER",
-        "SCROLL_DOWN",
-        "SCROLL_UP",
-        "WAIT",
-      ].includes(request.operation) ||
-      ([
-        "CLICK",
-        "TYPE_TEXT",
-        "SELECT",
-        "CHECK",
-        "UNCHECK",
-        "PRESS_ENTER",
-      ].includes(request.operation) &&
-        !bound)
+      !["CLICK", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "PRESS_ENTER", "SCROLL_DOWN", "SCROLL_UP", "WAIT"].includes(
+        request.operation,
+      ) ||
+      (["CLICK", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "PRESS_ENTER"].includes(request.operation) && !bound)
     )
       return { status: "stale", reason: "operation-not-observed" };
     if (request.operation === "WAIT")
@@ -297,10 +243,7 @@ export function pageBridge(request: PageRequest): unknown {
         const finish = () => {
           observer.disconnect();
           clearTimeout(timer);
-          const receipt: Receipt = {
-            status: "executed",
-            actionId: request.actionId,
-          };
+          const receipt: Receipt = { status: "executed", actionId: request.actionId };
           registry.receipts.set(request.actionId, receipt);
           resolve(receipt);
         };
@@ -313,10 +256,7 @@ export function pageBridge(request: PageRequest): unknown {
           attributes: true,
         });
       });
-    registry.receipts.set(request.actionId, {
-      status: "uncertain",
-      actionId: request.actionId,
-    });
+    registry.receipts.set(request.actionId, { status: "uncertain", actionId: request.actionId });
     try {
       const node = bound?.node;
       switch (request.operation) {
@@ -325,10 +265,8 @@ export function pageBridge(request: PageRequest): unknown {
           break;
         case "CHECK":
         case "UNCHECK":
-          if (!(node instanceof HTMLInputElement) || node.type !== "checkbox")
-            throw new Error("Unsupported checkbox");
-          if (node.checked !== (request.operation === "CHECK"))
-            HTMLElement.prototype.click.call(node);
+          if (!(node instanceof HTMLInputElement) || node.type !== "checkbox") throw new Error("Unsupported checkbox");
+          if (node.checked !== (request.operation === "CHECK")) HTMLElement.prototype.click.call(node);
           break;
         case "TYPE_TEXT": {
           const terminal = node ? terminalInput(node) : undefined;
@@ -336,41 +274,23 @@ export function pageBridge(request: PageRequest): unknown {
           if (
             !field ||
             request.text === undefined ||
-            ((field instanceof HTMLInputElement ||
-              field instanceof HTMLTextAreaElement) &&
-              field.readOnly)
+            ((field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) && field.readOnly)
           )
             throw new Error("Unsupported field");
           if (terminal) field.focus({ preventScroll: true });
-          if (!field.isConnected)
-            throw new Error("Field detached during focus");
-          if (
-            field instanceof HTMLInputElement ||
-            field instanceof HTMLTextAreaElement
-          ) {
+          if (!field.isConnected) throw new Error("Field detached during focus");
+          if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
             const prototype =
-              field instanceof HTMLInputElement
-                ? HTMLInputElement.prototype
-                : HTMLTextAreaElement.prototype;
-            const setter = Object.getOwnPropertyDescriptor(
-              prototype,
-              "value",
-            )?.set;
+              field instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
             if (!setter) throw new Error("Unsupported setter");
             setter.call(field, request.text);
           } else if (field.isContentEditable) field.textContent = request.text;
           else throw new Error("Unsupported field");
           field.dispatchEvent(
-            new InputEvent("input", {
-              bubbles: true,
-              composed: true,
-              inputType: "insertText",
-              data: request.text,
-            }),
+            new InputEvent("input", { bubbles: true, composed: true, inputType: "insertText", data: request.text }),
           );
-          field.dispatchEvent(
-            new Event("change", { bubbles: true, composed: true }),
-          );
+          field.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
           break;
         }
         case "SELECT":
@@ -381,19 +301,14 @@ export function pageBridge(request: PageRequest): unknown {
           )
             throw new Error("Unsupported option");
           node.selectedIndex = bound.option.index;
-          node.dispatchEvent(
-            new Event("input", { bubbles: true, composed: true }),
-          );
-          node.dispatchEvent(
-            new Event("change", { bubbles: true, composed: true }),
-          );
+          node.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+          node.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
           break;
         case "PRESS_ENTER": {
           const input = node ? terminalInput(node) : undefined;
           if (input) {
             input.focus({ preventScroll: true });
-            if (!input.isConnected)
-              throw new Error("Terminal input detached during focus");
+            if (!input.isConnected) throw new Error("Terminal input detached during focus");
             for (const type of ["keydown", "keyup"])
               input.dispatchEvent(
                 new KeyboardEvent(type, {
@@ -409,8 +324,7 @@ export function pageBridge(request: PageRequest): unknown {
             break;
           }
           const form = node?.closest("form");
-          if (!(form instanceof HTMLFormElement))
-            throw new Error("No observed form");
+          if (!(form instanceof HTMLFormElement)) throw new Error("No observed form");
           form.requestSubmit();
           break;
         }
@@ -421,10 +335,7 @@ export function pageBridge(request: PageRequest): unknown {
           window.scrollBy(0, -500);
           break;
       }
-      const receipt: Receipt = {
-        status: "executed",
-        actionId: request.actionId,
-      };
+      const receipt: Receipt = { status: "executed", actionId: request.actionId };
       registry.receipts.set(request.actionId, receipt);
       if (registry.receipts.size > 250) {
         const first = registry.receipts.keys().next().value;
@@ -454,28 +365,16 @@ export function pageBridge(request: PageRequest): unknown {
     option?: HTMLOptionElement,
   ) => {
     (targets[operation] ??= {})[targetId] = candidate;
-    boundTargets.set(`${operation}:${targetId}`, {
-      node,
-      operation,
-      candidate,
-      option,
-      guard: guard(node),
-    });
+    boundTargets.set(`${operation}:${targetId}`, { node, operation, candidate, option, guard: guard(node) });
   };
   for (const node of nodes) {
     if (
-      !node.matches(
-        'a[href],button,input,textarea,select,summary,[contenteditable="true"],[role]',
-      ) ||
+      !node.matches('a[href],button,input,textarea,select,summary,[contenteditable="true"],[role]') ||
       !visible(node) ||
       disabled(node)
     )
       continue;
-    if (
-      node instanceof HTMLInputElement &&
-      ["hidden", "file", "color", "range"].includes(node.type)
-    )
-      continue;
+    if (node instanceof HTMLInputElement && ["hidden", "file", "color", "range"].includes(node.type)) continue;
     const rect = node.getBoundingClientRect();
     if (
       !rect.width ||
@@ -502,20 +401,12 @@ export function pageBridge(request: PageRequest): unknown {
     const operations: string[] = [];
     if (node instanceof HTMLSelectElement) {
       for (const [index, option] of Array.from(node.options).entries())
-        if (
-          !option.selected &&
-          !option.disabled &&
-          !option.closest("optgroup[disabled]")
-        ) {
+        if (!option.selected && !option.disabled && !option.closest("optgroup[disabled]")) {
           add(
             "SELECT",
             `${nodeId}:${index}`,
             node,
-            {
-              ...candidate,
-              label: `${label} → ${option.label}`,
-              value: option.value,
-            },
+            { ...candidate, label: `${label} → ${option.label}`, value: option.value },
             option,
           );
         }
@@ -528,14 +419,10 @@ export function pageBridge(request: PageRequest): unknown {
         Boolean(terminalInput(node)) ||
         node instanceof HTMLTextAreaElement ||
         node.isContentEditable ||
-        (node instanceof HTMLInputElement &&
-          !["button", "submit", "reset", "radio", "checkbox"].includes(
-            node.type,
-          ));
+        (node instanceof HTMLInputElement && !["button", "submit", "reset", "radio", "checkbox"].includes(node.type));
       if (
         editable &&
-        !(node instanceof HTMLInputElement ||
-        node instanceof HTMLTextAreaElement
+        !(node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement
           ? node.readOnly
           : node.getAttribute("aria-readonly") === "true")
       ) {
@@ -585,13 +472,7 @@ export function pageBridge(request: PageRequest): unknown {
     while ((textNode = walker.nextNode()) && length < 12_000) {
       const parent = textNode.parentElement,
         value = textNode.textContent?.trim();
-      if (
-        !parent ||
-        !value ||
-        parent.closest("script,style,noscript,template") ||
-        !visible(parent)
-      )
-        continue;
+      if (!parent || !value || parent.closest("script,style,noscript,template") || !visible(parent)) continue;
       const range = document.createRange();
       range.selectNodeContents(textNode);
       const rect = range.getBoundingClientRect();
@@ -619,10 +500,7 @@ export function pageBridge(request: PageRequest): unknown {
     "\n" +
     text;
   const snapshotId = crypto.randomUUID();
-  registry.snapshots.set(snapshotId, {
-    page: pageKey(),
-    targets: boundTargets,
-  });
+  registry.snapshots.set(snapshotId, { page: pageKey(), targets: boundTargets });
   if (registry.snapshots.size > 4) {
     const first = registry.snapshots.keys().next().value;
     if (first) registry.snapshots.delete(first);
@@ -632,9 +510,7 @@ export function pageBridge(request: PageRequest): unknown {
     "DONE",
     "BLOCKED",
     ...(scrollY > 0 ? ["SCROLL_UP"] : []),
-    ...(scrollY + innerHeight < document.documentElement.scrollHeight - 2
-      ? ["SCROLL_DOWN"]
-      : []),
+    ...(scrollY + innerHeight < document.documentElement.scrollHeight - 2 ? ["SCROLL_DOWN"] : []),
   ];
   return {
     url: location.href,

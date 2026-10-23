@@ -2,12 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  acquireSession,
-  atomicWrite,
-  readState,
-  statePath,
-} from "../../src/store.ts";
+import { acquireSession, atomicWrite, readState, statePath } from "../../src/store.ts";
 
 let directory: string;
 const previous = process.env.JEV_STATE_DIR;
@@ -25,12 +20,8 @@ test("a live session owner cannot be stolen, including by recover", async () => 
   const runId = crypto.randomUUID();
   const release = await acquireSession("locked", runId);
   try {
-    await expect(acquireSession("locked", runId)).rejects.toThrow(
-      "live process",
-    );
-    await expect(acquireSession("locked", runId, true)).rejects.toThrow(
-      "live process",
-    );
+    await expect(acquireSession("locked", runId)).rejects.toThrow("live process");
+    await expect(acquireSession("locked", runId, true)).rejects.toThrow("live process");
   } finally {
     release();
   }
