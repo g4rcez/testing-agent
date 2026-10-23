@@ -201,7 +201,7 @@ test("cancellation during video startup preserves cancelled status and cleans th
               ),
             );
             await Bun.write(
-              join(directory, basename(args[2], ".webm") + ".cancel"),
+              join(directory, basename(args[2], ".mp4") + ".cancel"),
               "1",
             );
             return aborted;
@@ -234,7 +234,7 @@ test("an acknowledged video start remains eligible for cleanup when persistence 
         command: async (args) => {
           commands.push(args);
           if (args[1] === "start" && args[2]) {
-            savedPath = join(directory, basename(args[2], ".webm") + ".json");
+            savedPath = join(directory, basename(args[2], ".mp4") + ".json");
             await rename(savedPath, savedPath + ".backup");
             await mkdir(savedPath);
           } else if (args[1] === "stop") {

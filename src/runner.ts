@@ -407,7 +407,7 @@ async function executeRun(
         const directory = resolve(stateRoot(), "videos");
         await mkdir(directory, { recursive: true, mode: 0o700 });
         state.video = {
-          path: resolve(directory, `${state.runId}.webm`),
+          path: resolve(directory, `${state.runId}.mp4`),
           status: "starting",
         };
         await saveRun(state);

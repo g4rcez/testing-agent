@@ -75,7 +75,7 @@ The CLI automatically resumes paused calls and prints one JSON result. It writes
 
 Results contain `steps`, `passed`, final `assertions`, `reason`, `video`, elapsed time, actions, and report paths. Steps expose `status`, `success`, and whether verification used an `assertion` or the `model`. Model verification is not independent proof; add an `expect` for important outcomes. Unvisited steps are skipped. Final assertions can fail even if every step passed.
 
-CLI runs record WebM by default and require ffmpeg. Videos live in `.agent-browser-jev/videos/<run-id>.webm`, or under `JEV_STATE_DIR`. Recording spans pauses and is finalized on terminal completion. Recording failure prevents success. A separate bounded 12-second cleanup budget applies even after cancellation/deadline. `--report-dir` changes report paths, not video paths. Plugin runs record only with `recordVideo: true`.
+CLI runs record MP4 (H.264) by default and require ffmpeg. Videos live in `.agent-browser-jev/videos/<run-id>.mp4`, or under `JEV_STATE_DIR`. Recording spans pauses and is finalized on terminal completion. Recording failure prevents success. A separate bounded 12-second cleanup budget applies even after cancellation/deadline. `--report-dir` changes report paths, not video paths. Plugin runs record only with `recordVideo: true`.
 
 State, reports, and videos persist; remove them when no longer needed. Never mutate a session concurrently with a test. Abrupt termination cannot finalize video. Recovery reconciles receipts but does not resume input after recording has ended; start a new test for a complete video. Close only your own sessions:
 
@@ -148,7 +148,7 @@ Defaults: `maxActions: 60`, `maxStepDecisions: 20`, `actionsPerCall: 20`, per-ca
 
 ## Existing recordings and development checks
 
-The [Wikipedia receipt](evidence/wikipedia-search.json) and [video](assets/wikipedia-search.webm) show a real **passing** source CLI run with the optional Node Laya backend: 8 of 8 steps, one model decision each, with URL and page-text assertions after every search, `assume` checks after each typing step, and no selectors.
+The [Wikipedia receipt](evidence/wikipedia-search.json) and [video](assets/wikipedia-search.mp4) show a real **passing** source CLI run with the optional Node Laya backend: 8 of 8 steps, one model decision each, with URL and page-text assertions after every search, `assume` checks after each typing step, and no selectors.
 
 The older [signed-out GitHub GIF](assets/github-star-sign-in.gif) is historical real-model evidence. Its receipt is in `docs/evidence/`; it does not verify the current definition or renamed repository. The signed-out GitHub demo reaches sign-in, not a successful star. Never record credential entry.
 

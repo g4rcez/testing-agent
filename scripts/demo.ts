@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const exec = promisify(execFile);
@@ -131,26 +131,32 @@ if (record && code === 0) {
       "0",
       "-i",
       resolve(frames, "frames.txt"),
+      "-vf",
+      "scale=trunc(iw/2)*2:trunc(ih/2)*2",
       "-c:v",
-      "libvpx",
+      "libx264",
       "-crf",
       "20",
-      "-b:v",
-      "0",
       "-pix_fmt",
       "yuv420p",
-      resolve(output, "browser.webm"),
+      "-movflags",
+      "+faststart",
+      resolve(output, "browser.mp4"),
     ],
     { timeout: 60_000, maxBuffer: 2_000_000 },
   );
   const gif = resolve(`docs/assets/${example}.gif`);
   await mkdir(resolve("docs/assets"), { recursive: true });
+  await copyFile(
+    resolve(output, "browser.mp4"),
+    resolve(`docs/assets/${example}.mp4`),
+  );
   await exec(
     "ffmpeg",
     [
       "-y",
       "-i",
-      resolve(output, "browser.webm"),
+      resolve(output, "browser.mp4"),
       "-filter_complex",
       "fps=8,scale=900:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
       "-loop",

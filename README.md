@@ -122,7 +122,7 @@ This is a real run of that file with the optional local Laya backend (CPU, no AP
 
 Every step passed on the first model decision.
 
-[Watch the video](docs/assets/wikipedia-search.webm) · [Read the full output](docs/evidence/wikipedia-search.json)
+[Watch the video](docs/assets/wikipedia-search.mp4) · [Read the full output](docs/evidence/wikipedia-search.json)
 
 Reproduce it with the local backend running: `bun run demo:wikipedia -- --record`. This is evidence for this recorded run and flow, not a guarantee for every site or prompt.
 

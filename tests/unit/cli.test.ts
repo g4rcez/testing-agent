@@ -215,7 +215,7 @@ console.log(JSON.stringify({success:true,data}));
       },
     ]);
     expect(result.video.status).toBe("saved");
-    expect(result.video.path.endsWith(".webm")).toBe(true);
+    expect(result.video.path.endsWith(".mp4")).toBe(true);
     const commands = (await Bun.file(log).text())
       .trim()
       .split("\n")
