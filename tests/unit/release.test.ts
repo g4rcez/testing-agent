@@ -10,7 +10,7 @@ import {
   publicationBaseline,
 } from "../../scripts/release.ts";
 
-test("trusted publishing requires GitHub OIDC, not an npm token", () => {
+test("provenance requires GitHub OIDC", () => {
   expect(() =>
     assertOidcEnvironment({
       ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc",
@@ -25,27 +25,12 @@ test("trusted publishing requires GitHub OIDC, not an npm token", () => {
     expect(() => assertOidcEnvironment(environment)).toThrow("OIDC");
 });
 
-test("the npm bootstrap secret reaches only the initial unpublished 0.0.1 publish", () => {
-  const environment = {
-    PATH: "/tools",
-    BOOTSTRAP_NPM_TOKEN: "bootstrap-fixture",
-    NODE_AUTH_TOKEN: "unrelated-fixture",
-  };
-  expect(
-    npmPublishEnvironment(environment, { version: "0.0.1", previousTag: undefined, registryExists: false }),
-  ).toEqual({ PATH: "/tools", NODE_AUTH_TOKEN: "bootstrap-fixture" });
-  for (const release of [
-    undefined,
-    { version: "0.0.1", previousTag: undefined, registryExists: true },
-    { version: "0.0.1", previousTag: "v0.0.1", registryExists: false },
-    { version: "0.0.2", previousTag: "v0.0.1", registryExists: true },
-    { version: "0.1.0", previousTag: undefined, registryExists: false },
-  ])
-    expect(npmPublishEnvironment(environment, release)).toEqual({ PATH: "/tools" });
-  expect(environment.BOOTSTRAP_NPM_TOKEN).toBe("bootstrap-fixture");
-  expect(
-    npmPublishEnvironment({ PATH: "/tools" }, { version: "0.0.1", previousTag: undefined, registryExists: false }),
-  ).toEqual({ PATH: "/tools" });
+test("the npm token reaches only npm publish", () => {
+  const environment = { PATH: "/tools", NPM_TOKEN: "token-fixture", NODE_AUTH_TOKEN: "unrelated-fixture" };
+  expect(npmPublishEnvironment(environment, true)).toEqual({ PATH: "/tools", NODE_AUTH_TOKEN: "token-fixture" });
+  expect(npmPublishEnvironment(environment)).toEqual({ PATH: "/tools" });
+  expect(npmPublishEnvironment({ PATH: "/tools" }, true)).toEqual({ PATH: "/tools" });
+  expect(environment.NPM_TOKEN).toBe("token-fixture");
 });
 
 test("a package rename keeps Git version history but starts a new npm reconciliation baseline", () => {
@@ -59,31 +44,6 @@ test("a package rename keeps Git version history but starts a new npm reconcilia
   expect(() => pendingRelease(baseline, { "0.0.2": { gitHead: "rename-revision" } }, "other-revision")).toThrow(
     "awaiting GitHub",
   );
-  const environment = { BOOTSTRAP_NPM_TOKEN: "fixture" };
-  expect(
-    npmPublishEnvironment(environment, {
-      version: "0.0.2",
-      previousTag: "v0.0.1",
-      previousPackage: "agent-tester",
-      registryExists: false,
-    }).NODE_AUTH_TOKEN,
-  ).toBe("fixture");
-  expect(
-    npmPublishEnvironment(environment, {
-      version: "0.0.2",
-      previousTag: "v0.0.1",
-      previousPackage: "agent-tester",
-      registryExists: true,
-    }).NODE_AUTH_TOKEN,
-  ).toBeUndefined();
-  expect(
-    npmPublishEnvironment(environment, {
-      version: "0.0.2",
-      previousTag: "v0.0.1",
-      previousPackage: "testing-agent",
-      registryExists: false,
-    }).NODE_AUTH_TOKEN,
-  ).toBeUndefined();
 });
 
 test("first release is always 0.0.1", () => {
@@ -231,8 +191,8 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   expect(release.concurrency["cancel-in-progress"]).toBe(false);
   const source = await Bun.file(".github/workflows/ci.yml").text();
   expect(source).not.toContain("NODE_AUTH_TOKEN:");
-  expect(source).toContain("BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}");
-  expect(source.indexOf("BOOTSTRAP_NPM_TOKEN:")).toBeGreaterThan(
+  expect(source).toContain("NPM_TOKEN: ${{ secrets.NPM_TOKEN }}");
+  expect(source.indexOf("NPM_TOKEN: $")).toBeGreaterThan(
     source.indexOf("name: Publish npm package and GitHub release"),
   );
 });

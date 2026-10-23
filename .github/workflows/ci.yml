@@ -81,4 +81,4 @@ jobs:
         run: bun run scripts/release.ts
         env:
           GH_TOKEN: ${{ github.token }}
-          BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

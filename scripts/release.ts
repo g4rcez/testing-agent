@@ -116,33 +116,18 @@ export function pendingRelease(
 
 export function assertOidcEnvironment(environment: Record<string, string | undefined>): void {
   if (!environment.ACTIONS_ID_TOKEN_REQUEST_URL || !environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN)
-    throw new Error(
-      "GitHub OIDC is unavailable; grant id-token: write and configure the npm trusted publisher for ci.yml",
-    );
+    throw new Error("GitHub OIDC is unavailable; grant id-token: write so npm can sign provenance");
 }
 
+// Child processes never see the npm token; only `npm publish` receives it.
 export function npmPublishEnvironment(
   environment: Record<string, string | undefined>,
-  release?: {
-    version: string;
-    previousTag: string | undefined;
-    registryExists: boolean;
-    previousPackage?: string | undefined;
-  },
+  publishing = false,
 ): Record<string, string | undefined> {
   const clean = { ...environment };
-  delete clean.BOOTSTRAP_NPM_TOKEN;
+  delete clean.NPM_TOKEN;
   delete clean.NODE_AUTH_TOKEN;
-  if (
-    release &&
-    ((release.version === "0.0.1" && !release.previousTag) ||
-      (release.previousPackage === "agent-tester" &&
-        release.previousTag === "v0.0.1" &&
-        release.version === "0.0.2")) &&
-    !release.registryExists &&
-    environment.BOOTSTRAP_NPM_TOKEN
-  )
-    clean.NODE_AUTH_TOKEN = environment.BOOTSTRAP_NPM_TOKEN;
+  if (publishing && environment.NPM_TOKEN) clean.NODE_AUTH_TOKEN = environment.NPM_TOKEN;
   return clean;
 }
 
@@ -166,6 +151,7 @@ async function release(): Promise<void> {
   )
     throw new Error("Publishing is allowed only from this repository's green main-branch GitHub workflow");
   assertOidcEnvironment(process.env);
+  if (!process.env.NPM_TOKEN) throw new Error("NPM_TOKEN is not set; add it as a repository secret");
   const revision = z
     .string()
     .regex(/^[a-f0-9]{40}$/)
@@ -240,12 +226,7 @@ async function release(): Promise<void> {
     await command(
       "npm",
       ["publish", archive, "--access", "public", "--provenance", "--ignore-scripts"],
-      npmPublishEnvironment(process.env, {
-        version,
-        previousTag,
-        registryExists: registry !== undefined,
-        previousPackage,
-      }),
+      npmPublishEnvironment(process.env, true),
     );
 
   await verifyNpmPublication(version, revision, integrity);
