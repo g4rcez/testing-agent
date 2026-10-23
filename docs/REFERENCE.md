@@ -17,7 +17,7 @@ In another terminal:
 ./bin/testing-agent test examples/garcez-blog.yaml
 ```
 
-Bun 1.3.14+, Node.js 20+, Chrome, agent-browser, and ffmpeg are required. Install missing tools manually. The optional Node Laya backend needs no Python. Its model weights are downloaded only by explicit setup, not by a test command. Use `ONNXRUNTIME_NODE_INSTALL=skip` with npm installation to skip unused CUDA downloads; the backend uses CPU inference.
+Bun 1.3.14+, Node.js 20+, Chrome, agent-browser, and ffmpeg are required. Run `testing-agent setup` to install missing tools for your OS (Homebrew, apt/dnf/pacman/apk/zypper, or winget); `testing-agent setup --manual` only prints the commands. The optional Node Laya backend needs no Python. Its model weights are downloaded only by explicit setup, not by a test command. Use `ONNXRUNTIME_NODE_INSTALL=skip` with npm installation to skip unused CUDA downloads; the backend uses CPU inference.
 
 ## Test definitions
 

@@ -2,14 +2,32 @@
 
 Write browser tests in plain-language **YAML or JSON**. agent-browser controls Chrome; Laya or Jev chooses the actions. Your assertions decide whether the test passes.
 
+## Quick start
+
+```sh
+npm install -g testing-agent agent-browser   # once
+testing-agent setup                          # install missing dependencies
+testing-agent init tests                     # scaffold a tests folder with an example
+testing-agent test tests/example.test.yaml   # run it
+```
+
+| Command                                        | What it does                                                                                             |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `testing-agent setup [--manual]`               | Installs Bun, Node.js, ffmpeg, agent-browser and Chrome for your OS; `--manual` only prints the commands |
+| `testing-agent setup laya`                     | Starts the optional local Laya backend                                                                   |
+| `testing-agent init [folder] [--yaml\|--json]` | Creates a tests folder with an example test                                                              |
+| `testing-agent test <file>`                    | Runs a YAML or JSON test                                                                                 |
+
 ## Install
 
-Requires **Bun 1.3.14+**, **Node.js 20+**, and **ffmpeg** on your PATH. Install missing tools before continuing.
+Requires **Bun 1.3.14+**, **Node.js 20+**, and **ffmpeg** on your PATH.
 
 ```sh
 ONNXRUNTIME_NODE_INSTALL=skip npm install -g testing-agent agent-browser
-agent-browser install
+testing-agent setup
 ```
+
+`testing-agent setup` installs whatever is missing (Bun, Node.js, ffmpeg, agent-browser and its Chrome) with Homebrew on macOS, apt/dnf/pacman/apk/zypper on Linux, or winget on Windows, and skips what is already present. To only see the commands for your platform without running them, use `testing-agent setup --manual`.
 
 Start the optional local Laya backend in a separate terminal. No Python or API key is needed:
 
@@ -20,6 +38,16 @@ testing-agent setup laya
 This uses [`@receptron/laya`](https://github.com/receptron/laya). The first explicit setup downloads about **1.7 GB** of pinned model weights; allow at least **2 GB RAM**. Wait for `"ready": true` and keep that terminal running. The install command skips unused CUDA downloads; this backend uses the CPU.
 
 Tests check backend reachability before opening a browser. If the local Laya server is not running, an interactive terminal asks whether to set it up now (it starts `testing-agent setup laya` only if you answer yes); non-interactive runs return setup instructions and never download or start anything. Existing Python Laya and hosted Jev configurations remain supported.
+
+## Start a project
+
+```sh
+testing-agent init          # asks which folder to use (default: tests)
+testing-agent init e2e      # uses the e2e folder
+testing-agent init --json   # JSON example instead of the default YAML (--yaml is explicit)
+```
+
+This creates the folder with an `example.test.yaml` (or `.json`) you can run right away. Existing files are never overwritten.
 
 ## First test
 
@@ -36,7 +64,7 @@ steps:
     value: ls
     expect:
       url: https://garcez.dev/
-      text: '[~]>_ ls'
+      text: "[~]>_ ls"
   - instruction: Press Enter in the Interactive garcez.dev terminal to execute ls
     expect:
       url: https://garcez.dev/
@@ -92,13 +120,13 @@ This adds the bundled schema reference for JSON/YAML editor suggestions. It does
 
 ## More examples
 
-| Example | What it checks |
-| --- | --- |
-| [Passing About test](examples/garcez-about.yaml) | Navigation to About, exact URL, and page heading |
-| [Blog test](examples/garcez-blog.yaml) | Terminal input, complete `ls` output, and About; three checked steps |
-| [Terminal](examples/garcez-ls.yaml) | Runs `ls` and checks all six output entries in order |
-| [GitHub tour](examples/github-repository-tour.yaml) | README, license, navigation, and the signed-out Star gate |
-| [Stay search](examples/stay-search-journey.yaml) | Filtering and details in a compatible local app |
+| Example                                             | What it checks                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| [Passing About test](examples/garcez-about.yaml)    | Navigation to About, exact URL, and page heading                     |
+| [Blog test](examples/garcez-blog.yaml)              | Terminal input, complete `ls` output, and About; three checked steps |
+| [Terminal](examples/garcez-ls.yaml)                 | Runs `ls` and checks all six output entries in order                 |
+| [GitHub tour](examples/github-repository-tour.yaml) | README, license, navigation, and the signed-out Star gate            |
+| [Stay search](examples/stay-search-journey.yaml)    | Filtering and details in a compatible local app                      |
 
 The authenticated [GitHub Star example](examples/github-star.yaml) changes account state and needs a manually signed-in session. The signed-out examples stop at sign-in and never add a star.
 
