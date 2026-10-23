@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
+
+First stable release. Versions before 1.0.0 were pre-release.
+
+- Format with oxfmt, lint with oxlint, and run both in CI.
+- Use Bun APIs instead of `node:` equivalents where one exists.
+- Release on every conventional commit type: `feat!` is major; `feat`, `refactor`, `ci`, `perf`, `fix` are minor; `build`, `chore`, `style`, `test`, `docs` are patch.
 
 - Record test videos as MP4 (H.264) instead of WebM.
 - Add `testing-agent setup [--manual]` to install missing dependencies per OS, and `testing-agent init [folder] [--yaml|--json]` to scaffold a tests folder.
