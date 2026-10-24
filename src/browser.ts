@@ -205,13 +205,27 @@ export class Browser {
 
   async assert(assertions: Assertion[]): Promise<AssertionResult> {
     const requested = Math.max(...assertions.map((item) => item.timeoutMs));
-    const timeout = Math.max(0, Math.min(requested, this.deadline - Date.now() - 200));
-    const data = z
-      .object({ result: z.unknown() })
-      .parse(await this.command(["eval", "--stdin"], assertionExpression(assertions, timeout)));
-    const result = assertionResultSchema.parse(data.result);
-    if (!result.passed && timeout < requested)
-      throw new BrowserDeadlineError("Call deadline interrupted assertion evaluation");
-    return result;
+    // A page that is still navigating can fail the first read, just as it can for an observation.
+    for (let attempt = 1; ; attempt++) {
+      const timeout = Math.max(0, Math.min(requested, this.deadline - Date.now() - 200));
+      try {
+        const data = z
+          .object({ result: z.unknown() })
+          .parse(await this.command(["eval", "--stdin"], assertionExpression(assertions, timeout)));
+        const result = assertionResultSchema.parse(data.result);
+        if (!result.passed && timeout < requested)
+          throw new BrowserDeadlineError("Call deadline interrupted assertion evaluation");
+        return result;
+      } catch (error) {
+        if (
+          attempt >= 3 ||
+          !(error instanceof RunError && error.code === "BROWSER_COMMAND_FAILED") ||
+          this.signal?.aborted ||
+          this.deadline - Date.now() < 3000
+        )
+          throw error;
+        await Bun.sleep(500);
+      }
+    }
   }
 }

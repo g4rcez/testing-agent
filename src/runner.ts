@@ -779,8 +779,12 @@ async function executeRun(
         // A step the page settled itself waits for its own expectation (up to the assertion's timeout)
         // instead of asking the model whether the page has caught up.
         if (decision.source === "fast" && step.expect) {
-          const result = await evaluateAssertions(browser, [step.expect]);
-          if (result.passed) {
+          // Only a shortcut: if the page cannot be read yet, the loop checks the expectation again next time.
+          const result = await evaluateAssertions(browser, [step.expect]).catch((error: unknown) => {
+            if (error instanceof RunError && error.code === "BROWSER_COMMAND_FAILED") return undefined;
+            throw error;
+          });
+          if (result?.passed) {
             state.completedSteps.push({ instruction: step.instruction, verification: "assertion" });
             state.stepIndex++;
             state.stepDecisions = 0;

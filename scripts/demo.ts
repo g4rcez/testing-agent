@@ -60,23 +60,9 @@ if (record && code === 0) {
   };
   if (video?.status !== "saved") throw new Error("The run did not save a video");
   await copyFile(video.path, resolve(output, "browser.mp4"));
-  const gif = resolve(`docs/assets/${example}.gif`);
   await mkdir(resolve("docs/assets"), { recursive: true });
-  await copyFile(video.path, resolve(`docs/assets/${example}.mp4`));
-  await exec(
-    "ffmpeg",
-    [
-      "-y",
-      "-i",
-      video.path,
-      "-filter_complex",
-      "fps=60,scale=900:-1:flags=lanczos,setsar=1,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3",
-      "-loop",
-      "0",
-      gif,
-    ],
-    { timeout: 300_000, maxBuffer: 2_000_000 },
-  );
-  console.log(`Recorded the real browser run: ${gif}`);
+  const destination = resolve(`docs/assets/${example}.mp4`);
+  await copyFile(video.path, destination);
+  console.log(`Recorded the real browser run: ${destination}`);
 }
 process.exitCode = code;

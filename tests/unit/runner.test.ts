@@ -474,6 +474,52 @@ test("the backend is asked to be ready only for steps that reach the model", asy
   expect([modelled.status, ready]).toEqual(["completed", 1]);
 });
 
+// Seen on the live Wikipedia example: right after a fast Enter press, the read of the step's expectation
+// failed once because the page was changing under it (a quick `eval` error from agent-browser).
+test("a failed read of the expectation right after a fast action does not fail the run", async () => {
+  let pressed = false;
+  let failed = 0;
+  let asked = 0;
+  const submit = {
+    ...observed(),
+    snapshotId: "snap",
+    targets: { PRESS_ENTER: { e0: { ref: "e0", label: "Search Wikipedia", role: "searchbox" } } },
+  };
+  const result = await startRun(
+    {
+      ...input(),
+      actionsPerCall: 5,
+      steps: [
+        { instruction: "Press Enter in the Search Wikipedia box to search", expect: { text: "App", timeoutMs: 0 } },
+      ],
+    },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => submit,
+        execute: async () => {
+          pressed = true;
+        },
+        assert: async () => {
+          if (!pressed) return { passed: false, checks: [{ passed: false, index: 0, message: "not yet" }] };
+          if (failed++ === 0) throw new RunError("BROWSER_COMMAND_FAILED", "agent-browser eval failed or timed out");
+          return { passed: true, checks: [{ passed: true, index: 0, message: "Passed" }] };
+        },
+      }),
+      decide: async () => {
+        asked++;
+        throw new Error("the model must not be asked");
+      },
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status, `${result.reasonCode}: ${result.reason}`).toBe("completed");
+  // Reads after the press: the one that failed, the loop-top check that completed the step, the final one.
+  expect([asked, failed]).toEqual([0, 3]);
+  expect(result.actions.map((action) => [action.operation, action.source])).toEqual([["PRESS_ENTER", "fast"]]);
+  expect(result.completedSteps[0]?.verification).toBe("assertion");
+});
+
 test("fastPath: false and ambiguous pages send the step to the model", async () => {
   for (const { fastPath, copies } of [
     { fastPath: false, copies: 1 },

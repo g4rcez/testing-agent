@@ -110,9 +110,13 @@ Before asking the model, the runner tries to settle each step from the page: typ
 
 ## Recorded passing test
 
-This is a real run of that file with the optional local Laya backend (CPU, no API key) when the model picks every control (`--no-fast-path`): **8 of 8 steps passed in 37 seconds**, and the URL and page text assertions held on all four articles.
+This is a real run of that file with the default settings: **8 of 8 steps passed in about 11 seconds**, and the URL and page text assertions held on all four articles. Every step was settled from the page, so no model was called and the local Laya server was never started. The recording is 60 fps.
 
-![Real passing Laya run searching Wikipedia for LLMs, IPv4, IPv6 and Spider-Man](docs/assets/wikipedia-search.gif)
+<video src="docs/assets/wikipedia-search.mp4" controls muted loop autoplay playsinline width="900"></video>
+
+[Watch the video](docs/assets/wikipedia-search.mp4) if it does not play above.
+
+For comparison, here is an earlier run of the same file on the same machine with the optional local Laya backend (CPU, no API key) choosing every control (`--no-fast-path`): **8 of 8 steps passed in 37 seconds**.
 
 | Step | What        | Model choice                        | Result                          | Time  |
 | ---- | ----------- | ----------------------------------- | ------------------------------- | ----- |
@@ -127,7 +131,7 @@ This is a real run of that file with the optional local Laya backend (CPU, no AP
 
 Every step passed on the first model decision.
 
-[Watch the video](docs/assets/wikipedia-search.mp4) · [Read the full output](docs/evidence/wikipedia-search.json)
+[Read the model-driven run's full output](docs/evidence/wikipedia-search.json)
 
 Reproduce it with the local backend running: `bun run demo:wikipedia -- --record`. This is evidence for this recorded run and flow, not a guarantee for every site or prompt.
 
