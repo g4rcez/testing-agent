@@ -11,6 +11,9 @@ testing-agent init tests                     # scaffold a tests folder with an e
 testing-agent test tests/example.test.yaml   # run it
 ```
 
+![](./docs/assets/wikipedia-search.mp4)
+
+
 | Command                                        | What it does                                                                                             |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `testing-agent setup [--manual]`               | Installs Bun, Node.js, ffmpeg, agent-browser and Chrome for your OS; `--manual` only prints the commands |
