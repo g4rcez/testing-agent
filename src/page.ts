@@ -312,7 +312,8 @@ export function pageBridge(request: PageRequest): unknown {
     const originalClose = window.close;
     window.close = function (this: Window) {
       closes++;
-      return originalClose.apply(this);
+      // Closing now would destroy the page before this call can return its receipt.
+      setTimeout(() => originalClose.apply(this), 50);
     };
     const aimed = (element: Element | null | undefined) => {
       const target = element?.closest("a[target],form[target]")?.getAttribute("target")?.toLowerCase() ?? "";
