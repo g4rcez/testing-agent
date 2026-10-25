@@ -72,7 +72,10 @@ test("a link that opens a new tab is followed, and the opener is back when the p
     { instruction: "Click Open link in new tab", expect: { text: "Popup page" } },
     { instruction: "Click Finish", expect: { text: "Message: done" } },
   ]);
-  expect(result.status, result.reason ?? "").toBe("completed");
+  expect(
+    result.status,
+    JSON.stringify({ reason: result.reason, debug: result.debug, actions: result.actions.length }),
+  ).toBe("completed");
   expect(result.actions.map((action) => [action.operation, action.source])).toEqual([
     ["CLICK", "fast"],
     ["CLICK", "fast"],
