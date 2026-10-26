@@ -98,6 +98,8 @@ describe("CLI test definitions", () => {
         ...process.env,
         AGENT_BROWSER_BIN: "/does-not-exist-browser",
         JEV_STATE_DIR: join(directory, "offline-state"),
+        // The default would start (and download) a real local model.
+        TESTING_AGENT_AUTOSTART: "0",
       },
       stdout: "pipe",
       stderr: "pipe",
@@ -111,6 +113,7 @@ describe("CLI test definitions", () => {
     expect(stdout).toBe("");
     expect(JSON.parse(stderr).error).toContain("no browser was started");
     expect(JSON.parse(stderr).setup).toContain("testing-agent setup laya");
+    expect(JSON.parse(stderr).code).toBe("BACKEND_UNREACHABLE");
     expect(
       await stat(join(directory, "offline-state")).then(
         () => true,
@@ -223,6 +226,27 @@ console.log(JSON.stringify({success:true,data}));
       "laya",
     ]);
     expect(result.code).toBe(0);
+  });
+
+  test("accepts --video-fps from 1 to 60 and rejects other values", async () => {
+    const accepted = await validate("fps.yaml", yaml, ["--video-fps", "60"]);
+    expect(accepted.code).toBe(0);
+    for (const value of ["0", "61", "1.5", "fast"]) {
+      const rejected = await validate("fps.yaml", yaml, ["--video-fps", value]);
+      expect(rejected.code).toBe(2);
+    }
+  });
+
+  test("validates the Laya settings of a test", async () => {
+    const withLaya = (laya: unknown) => JSON.stringify({ ...definition, backend: { provider: "laya", laya } });
+    const accepted = await validate(
+      "laya-settings.json",
+      withLaya({ language: "multilingual", maxLen: 256, headMaxLen: 96, threads: 2 }),
+    );
+    expect(accepted.code).toBe(0);
+    expect((await validate("laya-large-head.json", withLaya({ maxLen: 256, headMaxLen: 300 }))).code).toBe(2);
+    expect((await validate("laya-unknown.json", withLaya({ revisionn: "x" }))).code).toBe(2);
+    expect((await validate("laya-language.json", withLaya({ language: "../x" }))).code).toBe(2);
   });
 
   test("rejects malformed YAML without exposing file contents", async () => {

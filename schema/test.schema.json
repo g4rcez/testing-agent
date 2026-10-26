@@ -54,9 +54,17 @@
                 "minLength": 1,
                 "maxLength": 1000
               },
+              "tab": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
               "expect": {
                 "type": "object",
                 "properties": {
+                  "caseSensitive": {
+                    "type": "boolean"
+                  },
                   "text": {
                     "type": "string",
                     "minLength": 1,
@@ -124,6 +132,53 @@
         "apiKeyEnv": {
           "type": "string",
           "pattern": "^[A-Z_][A-Z0-9_]*$"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "autostart": {
+          "type": "boolean"
+        },
+        "laya": {
+          "type": "object",
+          "properties": {
+            "language": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_-]{1,40}$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9._-]{1,64}$"
+            },
+            "modelDir": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "maxLen": {
+              "type": "integer",
+              "minimum": 64,
+              "maximum": 4096
+            },
+            "headMaxLen": {
+              "type": "integer",
+              "minimum": 16,
+              "maximum": 4096
+            },
+            "threads": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
@@ -197,12 +252,48 @@
             "type": "string",
             "maxLength": 10000
           }
+        },
+        "dialogs": {
+          "type": "object",
+          "properties": {
+            "policy": {
+              "default": "accept",
+              "type": "string",
+              "enum": [
+                "accept",
+                "dismiss"
+              ]
+            },
+            "promptText": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          }
+        },
+        "tabs": {
+          "type": "object",
+          "properties": {
+            "follow": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "never"
+              ]
+            }
+          }
         }
       },
       "additionalProperties": false
     },
     "recordVideo": {
       "type": "boolean"
+    },
+    "videoFps": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
     },
     "url": {
       "type": "string",
@@ -226,6 +317,16 @@
       "minimum": 1,
       "maximum": 200
     },
+    "blockedRetries": {
+      "default": 2,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "fastPath": {
+      "default": true,
+      "type": "boolean"
+    },
     "timeoutMs": {
       "default": 45000,
       "type": "integer",
@@ -245,6 +346,9 @@
       "items": {
         "type": "object",
         "properties": {
+          "caseSensitive": {
+            "type": "boolean"
+          },
           "text": {
             "type": "string",
             "minLength": 1,

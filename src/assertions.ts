@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Assertion } from "./contracts.ts";
+import { normalizeText } from "./normalize.ts";
 
 export const assertionResultSchema = z.object({
   passed: z.boolean(),
@@ -7,17 +8,29 @@ export const assertionResultSchema = z.object({
 });
 export type AssertionResult = z.infer<typeof assertionResultSchema>;
 
-function assertInPage(assertions: Assertion[], timeoutMs: number): Promise<AssertionResult> {
+function assertInPage(
+  assertions: Assertion[],
+  timeoutMs: number,
+  normalize: (text: string, caseSensitive?: boolean) => string,
+): Promise<AssertionResult> {
   return new Promise((resolve) => {
-    const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
     let observer: MutationObserver | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () =>
       assertions.map((assertion, index) => {
         try {
+          const exact = assertion.caseSensitive === true;
+          const sameUrl = (expected: string) => {
+            try {
+              return new URL(expected, location.href).href === location.href;
+            } catch {
+              return location.href === expected;
+            }
+          };
           let passed =
-            (assertion.text === undefined || normalize(document.body.innerText).includes(normalize(assertion.text))) &&
-            (assertion.url === undefined || location.href === assertion.url);
+            (assertion.text === undefined ||
+              normalize(document.body.innerText, exact).includes(normalize(assertion.text, exact))) &&
+            (assertion.url === undefined || sameUrl(assertion.url));
           if (assertion.selector !== undefined) {
             const elements = Array.from(document.querySelectorAll(assertion.selector));
             if (assertion.count !== undefined) passed &&= elements.length === assertion.count;
@@ -35,7 +48,9 @@ function assertInPage(assertions: Assertion[], timeoutMs: number): Promise<Asser
                 (elements[0] instanceof HTMLInputElement ||
                   elements[0] instanceof HTMLSelectElement ||
                   elements[0] instanceof HTMLTextAreaElement) &&
-                elements[0].value === assertion.value;
+                (exact
+                  ? elements[0].value === assertion.value
+                  : normalize(elements[0].value) === normalize(assertion.value));
             if (assertion.checked !== undefined)
               passed &&=
                 elements.length === 1 &&
@@ -83,5 +98,5 @@ function assertInPage(assertions: Assertion[], timeoutMs: number): Promise<Asser
 }
 
 export function assertionExpression(assertions: Assertion[], timeoutMs: number): string {
-  return `(${assertInPage.toString()})(${JSON.stringify(assertions)},${timeoutMs})`;
+  return `(${assertInPage.toString()})(${JSON.stringify(assertions)},${timeoutMs},${normalizeText.toString()})`;
 }

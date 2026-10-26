@@ -1,7 +1,19 @@
+export type DialogPolicy = { policy: "accept" | "dismiss"; promptText?: string | undefined };
+export type PageDialog = { type: string; message: string };
+// What a scrollable container still holds out of view: how many controls and, for matching, their labels.
+export type ScrollInfo = {
+  progress: number;
+  below: number;
+  above: number;
+  belowLabels: string[];
+  aboveLabels: string[];
+};
+
 export type PageRequest =
-  | { type: "observe" }
+  | { type: "observe"; dialogs?: DialogPolicy | undefined }
   | {
       type: "execute";
+      dialogs?: DialogPolicy | undefined;
       snapshotId: string;
       actionId: string;
       operation: string;
@@ -19,6 +31,7 @@ export function pageBridge(request: PageRequest): unknown {
     value?: string;
     currentValue?: string;
     checked?: string;
+    scroll?: ScrollInfo;
   };
   type Bound = {
     node: HTMLElement;
@@ -27,9 +40,17 @@ export function pageBridge(request: PageRequest): unknown {
     candidate: Candidate;
     operation: string;
   };
-  type Receipt = { status: "executed" | "uncertain"; actionId: string };
+  type Receipt = {
+    status: "executed" | "uncertain";
+    actionId: string;
+    dialogs?: PageDialog[];
+    opensTab?: boolean;
+    closesTab?: boolean;
+  };
   type Registry = {
     documentId: string;
+    dialogs: PageDialog[];
+    policy: DialogPolicy;
     ids: WeakMap<HTMLElement, string>;
     next: number;
     snapshots: Map<string, { page: string; targets: Map<string, Bound> }>;
@@ -38,12 +59,34 @@ export function pageBridge(request: PageRequest): unknown {
   const scope = window as Window & { __agentBrowserJev?: Registry };
   const registry = (scope.__agentBrowserJev ??= {
     documentId: crypto.randomUUID(),
+    dialogs: [],
+    policy: { policy: "accept" },
     ids: new WeakMap(),
     next: 1,
     snapshots: new Map(),
     receipts: new Map(),
   });
   if (request.type === "receipt") return registry.receipts.get(request.actionId) ?? null;
+  // A dialog blocks the page until someone answers it, which would freeze the click that opened it.
+  // Answer them here by policy, remember what was asked, and keep doing so for the life of the document.
+  if (request.dialogs) registry.policy = request.dialogs;
+  const scopeWithDialogs = scope as Window & { __agentBrowserJevDialogs?: boolean };
+  if (!scopeWithDialogs.__agentBrowserJevDialogs) {
+    scopeWithDialogs.__agentBrowserJevDialogs = true;
+    const remember = (type: string, message: unknown) => {
+      registry.dialogs.push({ type, message: String(message ?? "").slice(0, 300) });
+      if (registry.dialogs.length > 20) registry.dialogs.shift();
+    };
+    window.alert = (message?: unknown) => remember("alert", message);
+    window.confirm = (message?: string) => {
+      remember("confirm", message);
+      return registry.policy.policy === "accept";
+    };
+    window.prompt = (message?: string, fallback?: string) => {
+      remember("prompt", message);
+      return registry.policy.policy === "accept" ? (registry.policy.promptText ?? fallback ?? "") : null;
+    };
+  }
   const roots: Array<Document | ShadowRoot> = [document];
   const nodes: HTMLElement[] = [];
   for (const root of roots)
@@ -257,6 +300,25 @@ export function pageBridge(request: PageRequest): unknown {
         });
       });
     registry.receipts.set(request.actionId, { status: "uncertain", actionId: request.actionId });
+    const dialogsBefore = registry.dialogs.length;
+    // An action opens a tab when it calls window.open or activates a link or form aimed at a new window.
+    let opens = 0;
+    const originalOpen = window.open;
+    window.open = function (this: Window, ...args: Parameters<typeof window.open>) {
+      opens++;
+      return originalOpen.apply(this, args);
+    };
+    let closes = 0;
+    const originalClose = window.close;
+    window.close = function (this: Window) {
+      closes++;
+      // Closing now would destroy the page before this call can return its receipt.
+      setTimeout(() => originalClose.apply(this), 50);
+    };
+    const aimed = (element: Element | null | undefined) => {
+      const target = element?.closest("a[target],form[target]")?.getAttribute("target")?.toLowerCase() ?? "";
+      return target !== "" && !["_self", "_top", "_parent"].includes(target);
+    };
     try {
       const node = bound?.node;
       switch (request.operation) {
@@ -329,13 +391,23 @@ export function pageBridge(request: PageRequest): unknown {
           break;
         }
         case "SCROLL_DOWN":
-          window.scrollBy(0, 500);
+        case "SCROLL_UP": {
+          const direction = request.operation === "SCROLL_DOWN" ? 1 : -1;
+          // A container scrolls by most of its own height; the page, or no target at all, by a fixed step.
+          if (node && node !== document.scrollingElement && node !== document.documentElement)
+            node.scrollBy({ top: direction * Math.max(60, node.clientHeight * 0.8), behavior: "instant" });
+          else window.scrollBy(0, direction * 500);
           break;
-        case "SCROLL_UP":
-          window.scrollBy(0, -500);
-          break;
+        }
       }
-      const receipt: Receipt = { status: "executed", actionId: request.actionId };
+      const asked = registry.dialogs.slice(Math.min(dialogsBefore, registry.dialogs.length));
+      const receipt: Receipt = {
+        status: "executed",
+        actionId: request.actionId,
+        ...(asked.length ? { dialogs: asked } : {}),
+        ...(opens > 0 || aimed(bound?.node) ? { opensTab: true } : {}),
+        ...(closes > 0 ? { closesTab: true } : {}),
+      };
       registry.receipts.set(request.actionId, receipt);
       if (registry.receipts.size > 250) {
         const first = registry.receipts.keys().next().value;
@@ -344,9 +416,50 @@ export function pageBridge(request: PageRequest): unknown {
       return receipt;
     } catch {
       return { status: "uncertain", actionId: request.actionId };
+    } finally {
+      window.open = originalOpen;
+      window.close = originalClose;
     }
   }
 
+  // Scrollable containers (lists, panels, dialogs). Controls inside one can be out of view even when the
+  // page itself does not scroll, so they are reported as hidden, with their labels, instead of as targets.
+  type Scroller = {
+    node: HTMLElement;
+    box: DOMRect;
+    below: string[];
+    above: string[];
+    belowCount: number;
+    aboveCount: number;
+  };
+  const scrollers = new Map<HTMLElement, Scroller>();
+  for (const node of nodes) {
+    if (node === document.body || node === document.documentElement || scrollers.size >= 12) continue;
+    if (node.scrollHeight <= node.clientHeight + 4 || node.clientHeight < 40) continue;
+    if (!["auto", "scroll", "overlay"].includes(getComputedStyle(node).overflowY) || !visible(node)) continue;
+    scrollers.set(node, {
+      node,
+      box: node.getBoundingClientRect(),
+      below: [],
+      above: [],
+      belowCount: 0,
+      aboveCount: 0,
+    });
+  }
+  const parentOf = (node: Element): HTMLElement | null =>
+    node.parentElement ?? ((node.getRootNode() as ShadowRoot).host as HTMLElement | undefined) ?? null;
+  // Where a rectangle sits against the containers around it: null when every one of them shows it.
+  const cutBy = (node: Element, rect: DOMRect): { scroller: Scroller; side: "above" | "below" | "side" } | null => {
+    if (!scrollers.size) return null;
+    for (let parent = parentOf(node); parent; parent = parentOf(parent)) {
+      const scroller = scrollers.get(parent);
+      if (!scroller) continue;
+      if (rect.bottom <= scroller.box.top) return { scroller, side: "above" };
+      if (rect.top >= scroller.box.bottom) return { scroller, side: "below" };
+      if (rect.right <= scroller.box.left || rect.left >= scroller.box.right) return { scroller, side: "side" };
+    }
+    return null;
+  };
   const targets: Record<string, Record<string, Candidate>> = {};
   const boundTargets = new Map<string, Bound>();
   const elements: Array<{
@@ -376,6 +489,17 @@ export function pageBridge(request: PageRequest): unknown {
       continue;
     if (node instanceof HTMLInputElement && ["hidden", "file", "color", "range"].includes(node.type)) continue;
     const rect = node.getBoundingClientRect();
+    const cut = rect.width && rect.height ? cutBy(node, rect) : null;
+    if (cut) {
+      // Scrolled out of its container: not clickable now, but the container can reveal it.
+      const hiddenRole = cut.side === "side" ? "" : role(node);
+      if (hiddenRole) {
+        const side = cut.side === "above" ? "above" : "below";
+        cut.scroller[`${side}Count`]++;
+        if (cut.scroller[side].length < 60) cut.scroller[side].push((name(node) || hiddenRole).slice(0, 40));
+      }
+      continue;
+    }
     if (
       !rect.width ||
       !rect.height ||
@@ -464,6 +588,70 @@ export function pageBridge(request: PageRequest): unknown {
     });
     if (elements.length >= 150) break;
   }
+  const containerLabel = (node: HTMLElement): string => {
+    const clean = (value: string | null | undefined) => (value ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+    const referenced = (node.getAttribute("aria-labelledby") ?? "")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((key) => document.getElementById(key)?.textContent ?? "")
+      .join(" ");
+    const own = clean(node.getAttribute("aria-label")) || clean(referenced) || clean(node.getAttribute("title"));
+    if (own) return own;
+    const heading = clean(node.querySelector("h1,h2,h3,h4,h5,h6,legend,caption,[role=heading]")?.textContent);
+    if (heading) return heading;
+    const before = node.previousElementSibling;
+    if (before && /^(H[1-6]|LABEL|LEGEND)$/.test(before.tagName) && clean(before.textContent))
+      return clean(before.textContent);
+    const kind =
+      node.getAttribute("role") ??
+      (["UL", "OL"].includes(node.tagName)
+        ? "list"
+        : node.tagName === "TABLE"
+          ? "table"
+          : node.tagName === "DIALOG"
+            ? "dialog"
+            : "area");
+    return `Scrollable ${kind}${node.id ? ` #${node.id.slice(0, 20)}` : ""}`;
+  };
+  // A container the model can scroll: SCROLL_DOWN / SCROLL_UP gain targets, and the page itself is offered
+  // as one more ("Page") so choosing between a container and the whole page stays possible.
+  for (const scroller of scrollers.values()) {
+    const { node, box } = scroller;
+    if (box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth || cutBy(node, box))
+      continue;
+    const canDown = node.scrollTop + node.clientHeight < node.scrollHeight - 2;
+    const canUp = node.scrollTop > 0;
+    if (!canDown && !canUp) continue;
+    const nodeId = id(node);
+    const progress = Math.round((100 * node.scrollTop) / Math.max(1, node.scrollHeight - node.clientHeight));
+    const candidate: Candidate = {
+      ref: nodeId,
+      label: containerLabel(node),
+      role: "scrollable",
+      currentValue: `${progress}% scrolled`,
+      scroll: {
+        progress,
+        below: scroller.belowCount,
+        above: scroller.aboveCount,
+        belowLabels: scroller.below,
+        aboveLabels: scroller.above,
+      },
+    };
+    if (canDown) add("SCROLL_DOWN", nodeId, node, candidate);
+    if (canUp) add("SCROLL_UP", nodeId, node, candidate);
+  }
+  if (targets.SCROLL_DOWN || targets.SCROLL_UP) {
+    const root = (document.scrollingElement ?? document.documentElement) as HTMLElement;
+    const range = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+    const page: Candidate = {
+      ref: "page",
+      label: "Page",
+      role: "scrollable",
+      currentValue: `${Math.round((100 * scrollY) / range)}% scrolled`,
+    };
+    if (scrollY + innerHeight < document.documentElement.scrollHeight - 2) add("SCROLL_DOWN", "page", root, page);
+    if (scrollY > 0) add("SCROLL_UP", "page", root, page);
+  }
   const words: string[] = [];
   let length = 0;
   for (const root of roots) {
@@ -482,7 +670,8 @@ export function pageBridge(request: PageRequest): unknown {
         rect.bottom > 0 &&
         rect.top < innerHeight &&
         rect.right > 0 &&
-        rect.left < innerWidth
+        rect.left < innerWidth &&
+        !(scrollers.size && cutBy(parent, rect))
       ) {
         words.push(value);
         length += value.length;

@@ -61,4 +61,48 @@ test("an assumption needs its distinctive words visible on the page", async () =
   };
   expect(assumptionGrounded("The Search Wikipedia box contains IPv4", page)).toBe(true);
   expect(assumptionGrounded("The Search Wikipedia box contains Spider-Man", page)).toBe(false);
+  expect(assumptionGrounded("the SEARCH wikipedia box contains ipv4", page)).toBe(true);
+  expect(
+    assumptionGrounded("The box contains Café", { ...page, elements: [{ ...page.elements[0]!, value: "CAFE" }] }),
+  ).toBe(true);
+});
+
+test("scrollable containers reach the model with what they hide, and the scroll operations are described", async () => {
+  const { makeRequest } = await import("../../src/decision.ts");
+  const input = runSchema.parse({
+    prompt: "Pick a country",
+    steps: ["Choose Spain from the list"],
+    session: "s",
+    backend: { provider: "laya" },
+    expect: [{ text: "Spain" }],
+  });
+  const screen: Observation = {
+    ...observation,
+    controls: ["WAIT", "DONE", "BLOCKED"],
+    targets: {
+      SCROLL_DOWN: {
+        s1: {
+          ref: "s1",
+          label: "Countries",
+          role: "scrollable",
+          currentValue: "20% scrolled",
+          scroll: {
+            progress: 20,
+            below: 7,
+            above: 3,
+            belowLabels: ["Spain", "Sweden", "Switzerland", "Turkey", "Ukraine"],
+            aboveLabels: ["Albania", "Austria", "Belgium"],
+          },
+        },
+        page: { ref: "page", label: "Page", role: "scrollable", currentValue: "0% scrolled" },
+      },
+    },
+  };
+  const { questions, operations } = makeRequest(input, 0, screen, []);
+  expect(operations.SCROLL_DOWN).toContain("scrollable area");
+  const criteria = (questions.scroll_down_target as { criteria: Record<string, { element: string }> }).criteria;
+  expect(criteria.s1!.element).toBe(
+    "[s1] Countries (scrollable, 20% scrolled; 7 below: Spain, Sweden, Switzerland, Turkey, ...; 3 above: Albania, Austria, Belgium)",
+  );
+  expect(criteria.page!.element).toBe("[page] Page");
 });

@@ -3,8 +3,19 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { Browser, StaleDecisionError, BrowserDeadlineError, BrowserCommandRejectedError } from "./browser.ts";
+import { BackendSetupError } from "./backend.ts";
 import { assume, backendConfig, decide, fieldValue } from "./decision.ts";
-import { runSchema, type Observation, type RunInput, type Assertion, type BrowserConfig } from "./contracts.ts";
+import { assumeDeterministic, resolveFast } from "./fastpath.ts";
+import { RunError, observationDebug, type ReasonCode } from "./diagnostics.ts";
+import { normalizeText, urlsEqual } from "./normalize.ts";
+import {
+  runSchema,
+  type Assertion,
+  type BrowserConfig,
+  type Decision,
+  type Observation,
+  type RunInput,
+} from "./contracts.ts";
 import type { AssertionResult } from "./assertions.ts";
 import {
   acquireSession,
@@ -24,6 +35,15 @@ const targetSchema = z.object({
   value: z.string().optional(),
   currentValue: z.string().optional(),
   checked: z.string().optional(),
+  scroll: z
+    .object({
+      progress: z.number(),
+      below: z.number(),
+      above: z.number(),
+      belowLabels: z.array(z.string()),
+      aboveLabels: z.array(z.string()),
+    })
+    .optional(),
 });
 const decisionSchema = z.object({
   operation: z.string(),
@@ -34,6 +54,11 @@ const decisionSchema = z.object({
   targetId: z.string().optional(),
   actionId: z.string().optional(),
   model: z.string().optional(),
+  probabilities: z.record(z.string(), z.number()).optional(),
+  targetProbabilities: z.record(z.string(), z.number()).optional(),
+  source: z.enum(["model", "fast", "deterministic"]).optional(),
+  rule: z.string().optional(),
+  rounds: z.number().optional(),
 });
 const actionSchema = z.object({
   stepIndex: z.number().int(),
@@ -44,6 +69,47 @@ const actionSchema = z.object({
   inferenceMs: z.number(),
   executeMs: z.number(),
   model: z.string().optional(),
+  source: z.enum(["model", "fast", "deterministic"]).default("model"),
+  rule: z.string().optional(),
+  dialogs: z.array(z.object({ type: z.string(), message: z.string() })).optional(),
+});
+const debugSchema = z.object({
+  lastDecision: z
+    .object({
+      operation: z.string(),
+      target: z.string().optional(),
+      confidence: z.number(),
+      targetConfidence: z.number().optional(),
+      probabilities: z.record(z.string(), z.number()).optional(),
+      targetProbabilities: z.record(z.string(), z.number()).optional(),
+      source: z.enum(["model", "fast", "deterministic"]).optional(),
+      rule: z.string().optional(),
+      rounds: z.number().optional(),
+      model: z.string().optional(),
+      inferenceMs: z.number(),
+    })
+    .optional(),
+  lastObservation: z
+    .object({
+      url: z.string(),
+      title: z.string().optional(),
+      fingerprint: z.string(),
+      targetCounts: z.record(z.string(), z.number()),
+      controls: z.array(z.string()).optional(),
+      controlsFiltered: z.boolean(),
+      textExcerpt: z.string(),
+    })
+    .optional(),
+  error: z
+    .object({
+      name: z.string(),
+      code: z.string(),
+      message: z.string().optional(),
+      details: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+    })
+    .optional(),
+  assertionChecks: z.array(z.object({ passed: z.boolean(), index: z.number(), message: z.string() })).optional(),
+  tabs: z.object({ count: z.number(), active: z.string(), urls: z.array(z.string()) }).optional(),
 });
 const stateSchema = z.object({
   version: z.literal(2),
@@ -58,12 +124,25 @@ const stateSchema = z.object({
   stepDecisions: z.number().int().min(0),
   actions: z.array(actionSchema),
   completedSteps: z.array(
-    z.object({ instruction: z.string(), verification: z.enum(["model", "assertion", "assumption"]) }),
+    z.object({ instruction: z.string(), verification: z.enum(["model", "assertion", "assumption", "deterministic"]) }),
   ),
   pendingAction: z
-    .object({ actionId: z.uuid(), decision: decisionSchema, inferenceMs: z.number(), startedAt: z.number() })
+    .object({
+      actionId: z.uuid(),
+      decision: decisionSchema,
+      inferenceMs: z.number(),
+      startedAt: z.number(),
+      tabId: z.string().optional(),
+    })
     .nullable(),
   reason: z.string().nullable(),
+  reasonCode: z.string().nullable().optional(),
+  debug: debugSchema.optional(),
+  // The tabs the session has had, so a resumed or recovered run knows which is the opener and which are new.
+  tabs: z
+    .object({ active: z.string(), opener: z.string(), latest: z.string().optional(), known: z.array(z.string()) })
+    .optional(),
+  blockedRetries: z.number().int().min(0).default(0),
   unchangedActions: z.number().int().min(0),
   staleDecisions: z.number().int().min(0),
   video: z
@@ -76,20 +155,145 @@ const stateSchema = z.object({
   assertions: z.array(z.object({ passed: z.boolean(), index: z.number(), message: z.string() })),
 });
 export type RunState = z.infer<typeof stateSchema>;
-type BrowserPort = Pick<Browser, "command" | "observe" | "execute"> & Partial<Pick<Browser, "receipt" | "assert">>;
+type BrowserPort = Pick<Browser, "command" | "observe" | "execute"> &
+  Partial<Pick<Browser, "receipt" | "assert" | "tabs" | "switchTab">>;
 export type RunnerDependencies = {
   browser: (session: string, deadline: number, signal?: AbortSignal, config?: BrowserConfig) => BrowserPort;
   decide: typeof decide;
   fieldValue: typeof fieldValue;
   assume?: typeof assume;
+  resolve?: typeof resolveFast;
+  /** Called right before the model is asked; lets a backend that starts on demand start now. */
+  beforeModel?: () => Promise<void>;
 };
-const defaults: RunnerDependencies = {
+export const defaultDependencies: RunnerDependencies = {
   browser: (session, deadline, signal, config) => new Browser(session, deadline, signal, config),
   decide,
   fieldValue,
   assume,
 };
 
+/** Ends or pauses a run with a stable code next to the human sentence. */
+function stop(state: RunState, status: RunState["status"], code: ReasonCode, reason: string) {
+  state.status = status;
+  state.reasonCode = code;
+  state.reason = reason;
+}
+function classify(error: unknown): { code: ReasonCode; reason: string } {
+  if (error instanceof RunError) return { code: error.code, reason: error.message };
+  if (error instanceof BackendSetupError) return { code: error.code, reason: error.message };
+  if (error instanceof BrowserCommandRejectedError) return { code: "BROWSER_COMMAND_FAILED", reason: error.message };
+  return { code: "INTERNAL", reason: error instanceof Error ? error.message : "Run failed" };
+}
+function remember(state: RunState, patch: NonNullable<RunState["debug"]>) {
+  state.debug = { ...state.debug, ...patch };
+}
+// Everything needed to see why a run stopped without re-running it.
+function debugReport(state: RunState) {
+  const slowestInferenceMs = Math.max(0, ...state.actions.map((action) => action.inferenceMs));
+  const now = state.endedAt ?? Date.now();
+  return {
+    ...state.debug,
+    stepIndex: state.stepIndex,
+    stepDecisions: state.stepDecisions,
+    unchangedActions: state.unchangedActions,
+    staleDecisions: state.staleDecisions,
+    blockedRetries: state.blockedRetries,
+    timings: {
+      elapsedMs: now - state.createdAt,
+      totalRemainingMs: Math.max(0, state.createdAt + state.input.totalTimeoutMs - now),
+      slowestInferenceMs,
+    },
+  };
+}
+// Tab bookkeeping. agent-browser makes a tab opened by a click the active one and falls back to the
+// opener when a pop-up closes; the runner notices the change, and can undo it with follow: "never".
+async function syncTabs(
+  browser: BrowserPort,
+  state: RunState,
+  expect: { opened?: boolean; closed?: boolean } = {},
+): Promise<void> {
+  if (!browser.tabs) return;
+  let list: Awaited<ReturnType<NonNullable<BrowserPort["tabs"]>>>;
+  try {
+    list = await browser.tabs();
+    // A tab appears a moment after the click that opens it and goes a moment after the one that closes
+    // it; wait up to two seconds for the list to show it.
+    for (let attempt = 0; (expect.opened || expect.closed) && state.tabs && attempt < 20; attempt++) {
+      const known = new Set(state.tabs.known);
+      const opened = list.some((tab) => !known.has(tab.id));
+      const closed = !list.some((tab) => tab.id === state.tabs!.active);
+      if ((expect.opened && opened) || (expect.closed && closed)) break;
+      await Bun.sleep(100);
+      list = await browser.tabs();
+    }
+  } catch (error) {
+    // Tab tracking is advisory: an agent-browser that cannot list tabs must not fail the run.
+    if (error instanceof BrowserDeadlineError) throw error;
+    return;
+  }
+  if (!list.length) return;
+  const previous = state.tabs;
+  const seen = new Set(previous?.known ?? []);
+  const fresh = previous ? list.filter((tab) => !seen.has(tab.id)) : [];
+  let active = list.find((tab) => tab.active)?.id ?? list[0]!.id;
+  // The active tab closed itself: return to the tab that opened it (agent-browser may not have yet).
+  if (previous && !list.some((tab) => tab.id === previous.active) && browser.switchTab) {
+    const back = list.find((tab) => tab.id === previous.opener) ?? list[0]!;
+    if (active !== back.id || !list.find((tab) => tab.id === active)?.active) await browser.switchTab(back.id);
+    active = back.id;
+  }
+  const follow = state.input.browser?.tabs?.follow ?? "auto";
+  const newest = fresh.at(-1);
+  // A tab appears in the list a moment before it becomes the active one; settle on the newest explicitly.
+  if (follow === "auto" && newest && active !== newest.id && browser.switchTab) {
+    await browser.switchTab(newest.id);
+    active = newest.id;
+  }
+  if (
+    follow === "never" &&
+    previous &&
+    fresh.length &&
+    active !== previous.active &&
+    list.some((tab) => tab.id === previous.active) &&
+    browser.switchTab
+  ) {
+    await browser.switchTab(previous.active);
+    active = previous.active;
+  }
+  const latest = fresh.at(-1)?.id ?? (list.some((tab) => tab.id === previous?.latest) ? previous?.latest : undefined);
+  state.tabs = {
+    active,
+    opener: previous?.opener ?? list[0]!.id,
+    known: list.map((tab) => tab.id),
+    ...(latest ? { latest } : {}),
+  };
+  remember(state, { tabs: { count: list.length, active, urls: list.map((tab) => tab.url).slice(0, 5) } });
+}
+async function selectTab(browser: BrowserPort, state: RunState, wanted: string): Promise<void> {
+  if (wanted === "current" || !browser.tabs || !browser.switchTab) return;
+  const list = await browser.tabs();
+  const opener = state.tabs?.opener ?? list[0]?.id;
+  const id =
+    wanted === "new"
+      ? (state.tabs?.latest ?? list.filter((tab) => tab.id !== opener).at(-1)?.id)
+      : wanted === "opener"
+        ? opener
+        : list.find((tab) => tab.id === wanted || tab.label === wanted)?.id;
+  const tab = list.find((candidate) => candidate.id === id);
+  if (!tab)
+    throw new RunError("TAB_NOT_FOUND", `The step asks for tab "${wanted}", which is not open`, {
+      tab: wanted,
+      open: list.length,
+    });
+  if (!tab.active) await browser.switchTab(tab.id);
+  state.tabs = {
+    active: tab.id,
+    opener: opener ?? tab.id,
+    known: list.map((candidate) => candidate.id),
+    ...(state.tabs?.latest ? { latest: state.tabs.latest } : {}),
+  };
+}
 export async function saveRun(state: RunState): Promise<void> {
   state.updatedAt = Date.now();
   await atomicWrite(statePath(state.runId), state);
@@ -120,7 +324,13 @@ export function summarize(state: RunState) {
         status,
         success: status === "passed",
         ...(completed ? { verification: completed.verification } : {}),
-        ...(status === "failed" ? { reason: state.reason } : {}),
+        ...(status === "failed"
+          ? {
+              reason: state.reason,
+              reasonCode: state.reasonCode ?? null,
+              debug: { lastDecision: state.debug?.lastDecision, lastObservation: state.debug?.lastObservation },
+            }
+          : {}),
       };
     }),
     video: state.video ?? null,
@@ -130,6 +340,8 @@ export function summarize(state: RunState) {
     actions: state.actions,
     assertions: state.assertions,
     reason: state.reason,
+    reasonCode: state.reasonCode ?? null,
+    ...(state.status === "completed" ? {} : { debug: debugReport(state) }),
     elapsedMs: (state.endedAt ?? Date.now()) - state.createdAt,
     resume: state.status === "paused" ? { type: "agent.resume", request: { runId: state.runId } } : null,
   };
@@ -138,10 +350,11 @@ export function assertCompletion(observation: Observation, expected: Assertion |
   if (!expected) return true;
   if (expected.selector !== undefined)
     throw new Error("Element assertions require the real browser assertion evaluator");
-  const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
+  const exact = expected.caseSensitive === true;
   return (
-    (expected.text === undefined || normalize(observation.tree).includes(normalize(expected.text))) &&
-    (expected.url === undefined || observation.url === expected.url)
+    (expected.text === undefined ||
+      normalizeText(observation.tree, exact).includes(normalizeText(expected.text, exact))) &&
+    (expected.url === undefined || urlsEqual(expected.url, observation.url))
   );
 }
 async function evaluateAssertions(browser: BrowserPort, assertions: Assertion[]): Promise<AssertionResult> {
@@ -154,7 +367,10 @@ async function evaluateAssertions(browser: BrowserPort, assertions: Assertion[])
   }));
   return { passed: checks.every((check) => check.passed), checks };
 }
-export async function startRun(input: RunInput, dependencies: RunnerDependencies = defaults): Promise<RunState> {
+export async function startRun(
+  input: RunInput,
+  dependencies: RunnerDependencies = defaultDependencies,
+): Promise<RunState> {
   backendConfig(input.backend);
   const runId = crypto.randomUUID();
   const now = Date.now();
@@ -181,6 +397,8 @@ export async function startRun(input: RunInput, dependencies: RunnerDependencies
     completedSteps: [],
     pendingAction: null,
     reason: null,
+    reasonCode: null,
+    blockedRetries: 0,
     unchangedActions: 0,
     staleDecisions: 0,
     assertions: [],
@@ -189,15 +407,21 @@ export async function startRun(input: RunInput, dependencies: RunnerDependencies
   await saveRun(state);
   return executeRun(state, dependencies, false, input.url);
 }
-export async function resumeRun(runId: string, dependencies: RunnerDependencies = defaults): Promise<RunState> {
+export async function resumeRun(
+  runId: string,
+  dependencies: RunnerDependencies = defaultDependencies,
+): Promise<RunState> {
   const state = await loadRun(runId);
   if (!["paused", "running"].includes(state.status)) return state;
   return executeRun(state, dependencies, false);
 }
-export async function recoverRun(runId: string, dependencies: RunnerDependencies = defaults): Promise<RunState> {
+export async function recoverRun(
+  runId: string,
+  dependencies: RunnerDependencies = defaultDependencies,
+): Promise<RunState> {
   return executeRun(await loadRun(runId), dependencies, true);
 }
-export async function cancelRun(runId: string, dependencies: RunnerDependencies = defaults) {
+export async function cancelRun(runId: string, dependencies: RunnerDependencies = defaultDependencies) {
   const state = await loadRun(runId);
   if (!["paused", "running"].includes(state.status)) return summarize(state);
   await requestCancellation(runId);
@@ -211,8 +435,7 @@ export async function cancelRun(runId: string, dependencies: RunnerDependencies 
     }
     try {
       const current = await loadRun(runId);
-      current.status = "cancelled";
-      current.reason = "Cancelled by user";
+      stop(current, "cancelled", "CANCELLED", "Cancelled by user");
       current.endedAt = Date.now();
       await finishVideo(current, dependencies);
       await saveRun(current);
@@ -233,6 +456,8 @@ function recordAction(state: RunState, pending: NonNullable<RunState["pendingAct
     elapsedMs: Date.now() - state.createdAt,
     inferenceMs: pending.inferenceMs,
     executeMs: Date.now() - pending.startedAt,
+    source: pending.decision.source ?? "model",
+    ...(pending.decision.rule ? { rule: pending.decision.rule } : {}),
   });
 }
 async function finishVideo(state: RunState, dependencies: RunnerDependencies): Promise<void> {
@@ -253,10 +478,7 @@ async function finishVideo(state: RunState, dependencies: RunnerDependencies): P
   } catch {
     state.video.status = "failed";
     state.video.error = "Video finalization failed; inspect the browser session for an active recording";
-    if (state.status === "completed") {
-      state.status = "failed";
-      state.reason = state.video.error;
-    }
+    if (state.status === "completed") stop(state, "failed", "VIDEO_FINALIZE_FAILED", state.video.error);
   }
 }
 
@@ -285,6 +507,9 @@ async function executeRun(
     if ((await Bun.file(cancelPath(state.runId)).text()).trim() === "1") controller.abort("cancelled");
     const browser = dependencies.browser(state.session, callDeadline, controller.signal, state.input.browser);
     if (state.pendingAction) {
+      // The receipt lives in the page that ran the action, which may no longer be the active tab.
+      if (state.pendingAction.tabId && browser.switchTab)
+        await browser.switchTab(state.pendingAction.tabId).catch(() => undefined);
       const receipt = browser.receipt
         ? await browser.receipt(state.pendingAction.actionId).catch(() => "unknown")
         : "unknown";
@@ -293,8 +518,12 @@ async function executeRun(
         state.pendingAction = null;
         state.status = "paused";
       } else {
-        state.status = "uncertain";
-        state.reason = "Interrupted input has no confirmed execution receipt; automatic replay is disabled";
+        stop(
+          state,
+          "uncertain",
+          "INPUT_RECEIPT_MISSING",
+          "Interrupted input has no confirmed execution receipt; automatic replay is disabled",
+        );
         state.endedAt = Date.now();
         await finishVideo(state, dependencies);
         await saveRun(state);
@@ -304,6 +533,7 @@ async function executeRun(
     if (!["running", "paused"].includes(state.status)) return state;
     state.status = "running";
     state.reason = null;
+    state.reasonCode = null;
     state.endedAt = null;
     await saveRun(state);
     let executed = 0;
@@ -314,22 +544,26 @@ async function executeRun(
         state.video = { path: resolve(directory, `${state.runId}.mp4`), status: "starting" };
         await saveRun(state);
         try {
-          await browser.command(["record", "start", state.video.path]);
+          const fps = String(state.input.videoFps);
+          await browser.command(["record", "start", state.video.path, "--fps", fps]);
         } catch (error) {
           if (error instanceof BrowserCommandRejectedError) state.video.status = "failed";
-          state.video.error =
-            error instanceof BrowserCommandRejectedError
-              ? "Video recording could not start; check agent-browser and ffmpeg"
-              : "Video startup outcome is unknown; recording acknowledgement was interrupted";
-          throw new Error(state.video.error);
+          const rejected = error instanceof BrowserCommandRejectedError;
+          state.video.error = rejected
+            ? "Video recording could not start; check agent-browser and ffmpeg"
+            : "Video startup outcome is unknown; recording acknowledgement was interrupted";
+          throw new RunError(rejected ? "VIDEO_START_FAILED" : "VIDEO_START_UNKNOWN", state.video.error);
         }
         state.video.status = "recording";
         await saveRun(state);
       } else if (state.video?.status === "starting") {
         state.video.error = "Video start was interrupted; inspect the browser session before retrying";
-        throw new Error(state.video.error);
+        throw new RunError("VIDEO_START_UNKNOWN", state.video.error);
       } else if (state.input.recordVideo && state.video?.status !== "recording") {
-        throw new Error("Video recording has already ended; start a new test instead of continuing without video");
+        throw new RunError(
+          "VIDEO_ENDED",
+          "Video recording has already ended; start a new test instead of continuing without video",
+        );
       }
       if (url) {
         state.pendingAction = {
@@ -343,21 +577,32 @@ async function executeRun(
         state.pendingAction = null;
         await saveRun(state);
       }
+      await syncTabs(browser, state);
       while (state.stepIndex < state.input.steps.length) {
         if (controller.signal.aborted) throw new Error("Run interrupted");
-        if (callDeadline - Date.now() < 300 || executed >= state.input.actionsPerCall) {
-          state.status = "paused";
-          state.reason = "Call budget reached; resume to continue";
+        // Do not start a decision that cannot finish in this call; resume starts it with a fresh budget.
+        const slowest = Math.max(
+          0,
+          ...state.actions
+            .filter((action) => action.source === "model")
+            .slice(-5)
+            .map((action) => action.inferenceMs),
+        );
+        const cannotFinish = executed > 0 && callDeadline < totalDeadline && callDeadline - Date.now() < slowest + 500;
+        if (callDeadline - Date.now() < 300 || cannotFinish || executed >= state.input.actionsPerCall) {
+          stop(state, "paused", "CALL_BUDGET", "Call budget reached; resume to continue");
           break;
         }
         if (state.stepDecisions >= state.input.maxStepDecisions) {
-          state.status = "blocked";
-          state.reason = "Current-step decision budget reached";
+          stop(state, "blocked", "STEP_DECISION_BUDGET", "Current-step decision budget reached");
           break;
         }
         const step = state.input.steps[state.stepIndex];
         if (!step) throw new Error("Missing current step");
+        // Choose the tab once, when the step starts: a pop-up may close itself as part of the step.
+        if (step.tab && state.stepDecisions === 0) await selectTab(browser, state, step.tab);
         const observed = await browser.observe();
+        let controlsFiltered = false;
         const completionAssertions = step.expect
           ? [step.expect]
           : state.stepIndex === state.input.steps.length - 1
@@ -377,40 +622,75 @@ async function executeRun(
             await saveRun(state);
             continue;
           }
-          if (!currentCompletion.passed && observed.controls)
+          if (!currentCompletion.passed && observed.controls) {
             observed.controls = observed.controls.filter((operation) => operation !== "DONE");
+            controlsFiltered = true;
+          }
         }
+        remember(state, { lastObservation: observationDebug(observed, controlsFiltered) });
         state.stepDecisions++;
         await saveRun(state);
-        const inferenceStarted = Date.now();
-        const decision = await dependencies.decide(
-          state.input,
-          state.stepIndex,
-          observed,
-          state.actions,
-          callDeadline,
-          controller.signal,
-        );
-        const inferenceMs = Date.now() - inferenceStarted;
+        // An unambiguous step is resolved from the page; only the rest is put to the model.
+        const fast = state.input.fastPath
+          ? (dependencies.resolve ?? resolveFast)(state.input, state.stepIndex, observed, state.actions)
+          : null;
+        let decision: Decision;
+        let inferenceMs = 0;
+        if (fast) decision = fast;
+        else {
+          // Starting a backend on demand is not inference time, so it stays out of the pause estimate.
+          await dependencies.beforeModel?.();
+          const inferenceStarted = Date.now();
+          decision = await dependencies.decide(
+            state.input,
+            state.stepIndex,
+            observed,
+            state.actions,
+            callDeadline,
+            controller.signal,
+          );
+          inferenceMs = Date.now() - inferenceStarted;
+        }
+        remember(state, {
+          lastDecision: {
+            operation: decision.operation,
+            ...(decision.target ? { target: decision.target.label } : {}),
+            confidence: decision.confidence,
+            ...(decision.targetConfidence === undefined ? {} : { targetConfidence: decision.targetConfidence }),
+            ...(decision.probabilities ? { probabilities: decision.probabilities } : {}),
+            ...(decision.targetProbabilities ? { targetProbabilities: decision.targetProbabilities } : {}),
+            ...(decision.source ? { source: decision.source } : {}),
+            ...(decision.rule ? { rule: decision.rule } : {}),
+            ...(decision.rounds ? { rounds: decision.rounds } : {}),
+            ...(decision.model ? { model: decision.model } : {}),
+            inferenceMs,
+          },
+        });
         if (decision.operation === "DONE") {
           const current = await browser.observe();
           if (current.fingerprint !== observed.fingerprint) {
             state.staleDecisions++;
-            if (state.staleDecisions >= 6) throw new Error("Frontend kept changing during decisions");
+            if (state.staleDecisions >= 6)
+              throw new RunError("STALE_OBSERVATION", "Frontend kept changing during decisions");
             continue;
           }
           if (step.expect) {
             const result = await evaluateAssertions(browser, [step.expect]);
             if (!result.passed) {
-              state.status = "failed";
-              state.reason = "The model reported DONE, but current-step assertions failed";
+              stop(
+                state,
+                "failed",
+                "DONE_ASSERTION_FAILED",
+                "The model reported DONE, but current-step assertions failed",
+              );
               state.assertions = result.checks;
+              remember(state, { assertionChecks: result.checks });
               break;
             }
           }
           state.completedSteps.push({
             instruction: step.instruction,
-            verification: step.expect ? "assertion" : "model",
+            verification: step.expect ? "assertion" : decision.source === "fast" ? "deterministic" : "model",
           });
           state.stepIndex++;
           state.stepDecisions = 0;
@@ -420,13 +700,41 @@ async function executeRun(
           continue;
         }
         if (decision.operation === "BLOCKED") {
-          state.status = "blocked";
-          state.reason = "The decision backend could not complete the current step";
-          break;
+          // Nothing has been tried on this step yet: the answer may be below the fold, so scroll and ask again.
+          const untouched = !state.actions.some(
+            (action) => action.stepIndex === state.stepIndex && action.source !== "deterministic",
+          );
+          const scroll = observed.controls?.includes("SCROLL_DOWN")
+            ? "SCROLL_DOWN"
+            : observed.controls?.includes("SCROLL_UP")
+              ? "SCROLL_UP"
+              : undefined;
+          if (!untouched || state.blockedRetries >= state.input.blockedRetries || !scroll) {
+            const retried = state.blockedRetries > 0;
+            const noScroll = untouched && !scroll && state.blockedRetries < state.input.blockedRetries;
+            stop(
+              state,
+              "blocked",
+              noScroll ? "MODEL_BLOCKED_NO_SCROLL" : "MODEL_BLOCKED",
+              retried
+                ? `The decision backend could not complete the current step after ${state.blockedRetries} scroll retries`
+                : noScroll
+                  ? "The decision backend could not complete the current step and the page cannot scroll further"
+                  : "The decision backend could not complete the current step",
+            );
+            break;
+          }
+          state.blockedRetries++;
+          decision = {
+            operation: scroll,
+            target: undefined,
+            confidence: 1,
+            source: "deterministic",
+            ...(observed.snapshotId ? { snapshotId: observed.snapshotId } : {}),
+          };
         }
         if (state.actions.length >= state.input.maxActions) {
-          state.status = "blocked";
-          state.reason = "Run action budget reached";
+          stop(state, "blocked", "ACTION_BUDGET", "Run action budget reached");
           break;
         }
         const text =
@@ -434,10 +742,17 @@ async function executeRun(
             ? await dependencies.fieldValue(state.input, step, observed, decision, callDeadline, controller.signal)
             : undefined;
         const actionId = crypto.randomUUID();
-        state.pendingAction = { actionId, decision: { ...decision, actionId }, inferenceMs, startedAt: Date.now() };
+        state.pendingAction = {
+          actionId,
+          decision: { ...decision, actionId },
+          inferenceMs,
+          startedAt: Date.now(),
+          ...(state.tabs ? { tabId: state.tabs.active } : {}),
+        };
         await saveRun(state);
+        let outcome: Awaited<ReturnType<BrowserPort["execute"]>>;
         try {
-          await browser.execute(
+          outcome = await browser.execute(
             { ...decision, actionId, ...(step.selector ? { expectedSelector: step.selector } : {}) },
             text,
           );
@@ -446,33 +761,70 @@ async function executeRun(
           state.pendingAction = null;
           state.staleDecisions++;
           await saveRun(state);
-          if (state.staleDecisions >= 6) throw new Error("Selected targets kept changing before dispatch");
+          if (state.staleDecisions >= 6)
+            throw new RunError("STALE_TARGET", "Selected targets kept changing before dispatch");
           continue;
         }
         recordAction(state, state.pendingAction);
+        if (outcome?.dialogs) state.actions.at(-1)!.dialogs = outcome.dialogs;
         state.pendingAction = null;
         state.staleDecisions = 0;
         await saveRun(state);
         executed++;
+        // Only a click or Enter can open a tab; looking costs a browser call, so look only then.
+        if (["CLICK", "PRESS_ENTER"].includes(decision.operation)) {
+          await syncTabs(browser, state, { opened: outcome?.opensTab === true, closed: outcome?.closesTab === true });
+          await saveRun(state);
+        }
+        // A step the page settled itself waits for its own expectation (up to the assertion's timeout)
+        // instead of asking the model whether the page has caught up.
+        if (decision.source === "fast" && step.expect) {
+          // Only a shortcut: if the page cannot be read yet, the loop checks the expectation again next time.
+          const result = await evaluateAssertions(browser, [step.expect]).catch((error: unknown) => {
+            if (error instanceof RunError && error.code === "BROWSER_COMMAND_FAILED") return undefined;
+            throw error;
+          });
+          if (result?.passed) {
+            state.completedSteps.push({ instruction: step.instruction, verification: "assertion" });
+            state.stepIndex++;
+            state.stepDecisions = 0;
+            state.unchangedActions = 0;
+            state.staleDecisions = 0;
+            await saveRun(state);
+            continue;
+          }
+        }
         const after = await browser.observe();
         // A step may state what must be true on the page once its action is done.
-        if (
-          step.assume &&
-          !step.expect &&
-          (await (dependencies.assume ?? assume)(state.input, state.stepIndex, after, callDeadline, controller.signal))
-        ) {
-          state.completedSteps.push({ instruction: step.instruction, verification: "assumption" });
-          state.stepIndex++;
-          state.stepDecisions = 0;
-          state.unchangedActions = 0;
-          state.staleDecisions = 0;
-          await saveRun(state);
-          continue;
+        if (step.assume && !step.expect && decision.source !== "deterministic") {
+          // A plain "the <field> box contains <value>" is read off the page; the model only judges the rest.
+          const verdict = state.input.fastPath ? assumeDeterministic(step.assume, after) : undefined;
+          if (verdict === undefined) await dependencies.beforeModel?.();
+          const confirmed =
+            verdict ??
+            (await (dependencies.assume ?? assume)(
+              state.input,
+              state.stepIndex,
+              after,
+              callDeadline,
+              controller.signal,
+            ));
+          if (confirmed) {
+            state.completedSteps.push({
+              instruction: step.instruction,
+              verification: verdict === true ? "deterministic" : "assumption",
+            });
+            state.stepIndex++;
+            state.stepDecisions = 0;
+            state.unchangedActions = 0;
+            state.staleDecisions = 0;
+            await saveRun(state);
+            continue;
+          }
         }
         state.unchangedActions = after.fingerprint === observed.fingerprint ? state.unchangedActions + 1 : 0;
         if (state.unchangedActions >= 3) {
-          state.status = "blocked";
-          state.reason = "Three actions produced no observable frontend change";
+          stop(state, "blocked", "NO_PAGE_CHANGE", "Three actions produced no observable frontend change");
           break;
         }
       }
@@ -485,29 +837,47 @@ async function executeRun(
         if (!expected.length) throw new Error("No deterministic final assertions were configured");
         const result = await evaluateAssertions(browser, expected);
         state.assertions = result.checks;
-        state.status = result.passed ? "completed" : "failed";
-        state.reason = result.passed ? null : "Final test assertions failed";
+        if (result.passed) {
+          state.status = "completed";
+          state.reason = null;
+          state.reasonCode = null;
+        } else {
+          stop(state, "failed", "FINAL_ASSERTION_FAILED", "Final test assertions failed");
+          remember(state, { assertionChecks: result.checks });
+        }
       }
     } catch (error) {
+      const failure = classify(error);
       if (state.pendingAction) {
-        state.status = "uncertain";
-        state.reason = "Input acknowledgement was interrupted; recover checks a receipt without replaying input";
+        stop(
+          state,
+          "uncertain",
+          "INPUT_ACK_INTERRUPTED",
+          "Input acknowledgement was interrupted; recover checks a receipt without replaying input",
+        );
       } else if (controller.signal.reason === "cancelled") {
-        state.status = "cancelled";
-        state.reason = "Cancelled by user";
+        stop(state, "cancelled", "CANCELLED", "Cancelled by user");
       } else if (state.video?.status === "failed" || state.video?.status === "starting") {
-        state.status = "blocked";
-        state.reason = state.video.error ?? "Video recording failed";
+        stop(
+          state,
+          "blocked",
+          error instanceof RunError && error.code.startsWith("VIDEO_") ? error.code : "VIDEO_FAILED",
+          state.video.error ?? "Video recording failed",
+        );
       } else if (Date.now() >= totalDeadline) {
-        state.status = "failed";
-        state.reason = "Total test deadline exceeded";
+        stop(state, "failed", "TOTAL_DEADLINE", "Total test deadline exceeded");
       } else if (controller.signal.aborted || error instanceof BrowserDeadlineError) {
-        state.status = "paused";
-        state.reason = "Call deadline reached; resume to continue";
+        stop(state, "paused", "CALL_DEADLINE", "Call deadline reached; resume to continue");
       } else {
-        state.status = "blocked";
-        state.reason = error instanceof Error ? error.message : "Run failed";
+        stop(state, "blocked", failure.code, failure.reason);
       }
+      remember(state, {
+        error: {
+          name: error instanceof Error ? error.name : "Error",
+          code: failure.code,
+          ...(error instanceof RunError ? { message: error.message, details: error.details } : {}),
+        },
+      });
     }
     if (!["running", "paused"].includes(state.status)) {
       await finishVideo(state, dependencies);

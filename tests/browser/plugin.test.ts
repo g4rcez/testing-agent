@@ -29,12 +29,18 @@ const resultSchema = z.object({
     status: z.string(),
     reason: z.string().nullable(),
     completedSteps: z.array(z.object({ instruction: z.string(), verification: z.string() })),
-    actions: z.array(z.object({ operation: z.string() })),
+    actions: z.array(z.object({ operation: z.string(), source: z.string().optional() })),
   }),
 });
 
-for (const provider of ["jev", "laya"] as const) {
-  test(`${provider}: plugin follows ordered steps in Chromium and resumes across processes`, async () => {
+// The first two runs pin the model protocol (every step goes to the scripted model); the third is the
+// same journey with the fast path, where the page alone settles all but one decision.
+for (const { provider, fastPath } of [
+  { provider: "jev", fastPath: false },
+  { provider: "laya", fastPath: false },
+  { provider: "jev", fastPath: true },
+] as const) {
+  test(`${provider}${fastPath ? " (fast path)" : ""}: plugin follows ordered steps in Chromium and resumes across processes`, async () => {
     const stateDir = await mkdtemp(join(tmpdir(), `jev-browser-${provider}-`));
     const session = `jev-test-${crypto.randomUUID()}`;
     let textRequests = 0;
@@ -128,6 +134,7 @@ for (const provider of ["jev", "laya"] as const) {
         session,
         url: String(server.url),
         actionsPerCall: 2,
+        fastPath,
       };
       let result = resultSchema.parse(
         await command(["plugin", "run", "jev", "agent.run", "--payload", JSON.stringify(payload)]),
@@ -153,7 +160,8 @@ for (const provider of ["jev", "laya"] as const) {
         "CLICK",
         "CLICK",
       ]);
-      expect(visitedSteps).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5]);
+      expect(visitedSteps).toEqual(fastPath ? [4] : [1, 1, 2, 2, 3, 3, 4, 4, 5]);
+      expect(result.data.actions.every((action) => action.source === (fastPath ? "fast" : "model"))).toBe(true);
       expect(auth.every((value) => value === "Bearer test-only")).toBe(true);
       expect(textRequests).toBe(provider === "laya" ? 1 : 0);
       const final = z
@@ -161,7 +169,12 @@ for (const provider of ["jev", "laya"] as const) {
         .parse(await command(["--session", session, "get", "text", "body"]));
       expect(final.data.text).toContain("Applied filters: Lisbon / Design / cancellation enabled");
       await mkdir("artifacts", { recursive: true });
-      await command(["--session", session, "screenshot", resolve(`artifacts/plugin-${provider}.png`)]);
+      await command([
+        "--session",
+        session,
+        "screenshot",
+        resolve(`artifacts/plugin-${provider}${fastPath ? "-fast" : ""}.png`),
+      ]);
       const saved = resultSchema.parse(
         await command(["plugin", "run", "jev", "agent.status", "--payload", JSON.stringify({ runId })]),
       );

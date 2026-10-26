@@ -129,6 +129,8 @@ test("cancellation aborts an in-flight model request and persists a terminal sta
     session,
     url: String(server.url),
     expect: [{ text: "Clicked 1" }],
+    // The point is cancelling a model request that is in flight, so the step must reach the model.
+    fastPath: false,
   };
   const child = Bun.spawn(["bun", "tests/fixtures/interrupted-run.ts", JSON.stringify(input)], {
     env,

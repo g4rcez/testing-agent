@@ -155,6 +155,24 @@ test("deterministic assertions check real form values and fail absent outcomes",
   expect((await browser.assert([{ selector: "#not-present", count: 0, timeoutMs: 0 }])).passed).toBe(true);
 });
 
+test("text, value and URL assertions ignore case by default and can be made exact", async () => {
+  await browser.execute(choice(await browser.observe(), "SELECT", "Category → Design"));
+  expect((await browser.assert([{ text: "FIND   a stay", timeoutMs: 0 }])).passed).toBe(true);
+  expect((await browser.assert([{ text: "FIND a stay", caseSensitive: true, timeoutMs: 0 }])).passed).toBe(false);
+  expect((await browser.assert([{ selector: "[name=category]", value: "design", timeoutMs: 0 }])).passed).toBe(true);
+  expect(
+    (await browser.assert([{ selector: "[name=category]", value: "design", caseSensitive: true, timeoutMs: 0 }]))
+      .passed,
+  ).toBe(false);
+  const { url } = (await browser.observe()) as { url: string };
+  const shouty = url.replace(
+    /^(\w+:\/\/)([^/]*)/,
+    (_, scheme: string, host: string) => scheme.toUpperCase() + host.toUpperCase(),
+  );
+  expect((await browser.assert([{ url: shouty, timeoutMs: 0 }])).passed).toBe(true);
+  expect((await browser.assert([{ url: `${url}x`, timeoutMs: 0 }])).passed).toBe(false);
+});
+
 test("ARIA checkboxes and open shadow-root buttons are executable", async () => {
   await browser.command([
     "eval",

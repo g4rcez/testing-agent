@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { BrowserCommandRejectedError, StaleDecisionError } from "../../src/browser.ts";
 import { runSchema, type Decision, type Observation } from "../../src/contracts.ts";
+import { RunError } from "../../src/diagnostics.ts";
 import {
   resumeRun,
   recoverRun,
@@ -92,6 +93,30 @@ test("resumes the same ordered steps without repeating acknowledged browser inpu
   expect(final.video?.status).toBe("saved");
   expect(summarize(final).passed).toBe(true);
   expect(summarize(final).steps.map((step) => step.status)).toEqual(["passed", "passed"]);
+});
+
+test("passes the video frame rate to record start, defaulting to 60", async () => {
+  expect(input().videoFps).toBe(60);
+  for (const videoFps of [60, 30]) {
+    const commands: string[][] = [];
+    const dependencies: RunnerDependencies = {
+      browser: () => ({
+        command: async (args) => {
+          commands.push(args);
+          return {};
+        },
+        observe: async () => observed(),
+        execute: async () => {},
+      }),
+      decide: async () => decision("DONE"),
+      fieldValue: async () => "unused",
+    };
+    await startRun({ ...input(), recordVideo: true, videoFps }, dependencies);
+    const start = commands[0] ?? [];
+    expect(start.slice(0, 2)).toEqual(["record", "start"]);
+    expect(start[2]).toEndWith(".mp4");
+    expect(start.slice(3)).toEqual(["--fps", String(videoFps)]);
+  }
 });
 
 test("recording start/stop failures never report a passed test", async () => {
@@ -277,6 +302,253 @@ test("discards a stale decision before any input", async () => {
   expect(result.actions).toHaveLength(0);
   expect(result.pendingAction).toBeNull();
   expect(predictions).toBe(2);
+});
+
+const scrollable = (fingerprint: string): Observation => ({
+  ...observed(fingerprint),
+  controls: ["SCROLL_DOWN", "DONE"],
+});
+
+test("a first decision that is BLOCKED scrolls down and asks again", async () => {
+  const executed: string[] = [];
+  let asked = 0;
+  let observations = 0;
+  const result = await startRun(
+    { ...input(), actionsPerCall: 5, steps: [{ instruction: "Open result" }] },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => scrollable(observations++ < 2 ? "top" : "scrolled"),
+        execute: async (d) => {
+          executed.push(d.operation);
+        },
+      }),
+      decide: async () => decision(asked++ === 0 ? "BLOCKED" : "DONE"),
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status).toBe("completed");
+  expect(executed).toEqual(["SCROLL_DOWN"]);
+  expect(result.actions.map((action) => [action.operation, action.source])).toEqual([["SCROLL_DOWN", "deterministic"]]);
+  expect(result.blockedRetries).toBe(1);
+  expect(asked).toBe(2);
+});
+
+test("a BLOCKED answer gives up after the configured scroll retries and says why", async () => {
+  let observations = 0;
+  const result = await startRun(
+    { ...input(), actionsPerCall: 5, steps: [{ instruction: "Open result" }], blockedRetries: 2 },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => scrollable(String(observations++)),
+        execute: async () => {},
+      }),
+      decide: async () => decision("BLOCKED"),
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status).toBe("blocked");
+  expect(result.reasonCode).toBe("MODEL_BLOCKED");
+  expect(result.reason).toContain("after 2 scroll retries");
+  expect(result.actions).toHaveLength(2);
+  const summary = summarize(result);
+  expect(summary.debug?.lastDecision?.operation).toBe("BLOCKED");
+  expect(summary.debug?.lastObservation?.controls).toEqual(["SCROLL_DOWN", "DONE"]);
+  expect(summary.steps[0]).toMatchObject({ status: "failed", reasonCode: "MODEL_BLOCKED" });
+});
+
+test("a BLOCKED answer on a page that cannot scroll is reported as such", async () => {
+  const result = await startRun(
+    { ...input(), steps: [{ instruction: "Open result" }] },
+    {
+      browser: () => ({ command: async () => ({}), observe: async () => observed(), execute: async () => {} }),
+      decide: async () => decision("BLOCKED"),
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status).toBe("blocked");
+  expect(result.reasonCode).toBe("MODEL_BLOCKED_NO_SCROLL");
+  expect(result.actions).toHaveLength(0);
+});
+
+test("backend failures carry a reason code and structured details", async () => {
+  const result = await startRun(
+    { ...input(), steps: [{ instruction: "Open result" }] },
+    {
+      browser: () => ({ command: async () => ({}), observe: async () => observed(), execute: async () => {} }),
+      decide: async () => {
+        throw new RunError("BACKEND_HTTP", "Model endpoint returned HTTP 502; no decision executed", {
+          httpStatus: 502,
+        });
+      },
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status).toBe("blocked");
+  expect(result.reasonCode).toBe("BACKEND_HTTP");
+  expect(summarize(result).debug?.error).toEqual({
+    name: "RunError",
+    code: "BACKEND_HTTP",
+    message: "Model endpoint returned HTTP 502; no decision executed",
+    details: { httpStatus: 502 },
+  });
+  expect(summarize(result).debug?.lastObservation?.url).toBe("https://example.com");
+});
+
+const searchField = (typed: boolean, copies = 1): Observation => ({
+  ...observed(typed ? "typed" : "empty"),
+  snapshotId: "snap",
+  targets: {
+    TYPE_TEXT: Object.fromEntries(
+      Array.from({ length: copies }, (_, index) => [
+        `e${index}`,
+        { ref: `e${index}`, label: "Search Wikipedia", role: "searchbox", currentValue: typed ? "IPv4" : "" },
+      ]),
+    ),
+  },
+});
+const typeStep = {
+  instruction: "Type IPv4 into the Search Wikipedia box",
+  value: "IPv4",
+  assume: "The Search Wikipedia box contains IPv4",
+};
+
+test("a step the page makes unambiguous runs without asking the model", async () => {
+  let typed = false;
+  let asked = 0;
+  let assumed = 0;
+  const executed: string[] = [];
+  const result = await startRun(
+    { ...input(), actionsPerCall: 5, steps: [typeStep] },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => searchField(typed),
+        execute: async (d, text) => {
+          executed.push(`${d.operation}:${text}`);
+          typed = true;
+        },
+      }),
+      decide: async () => {
+        asked++;
+        throw new Error("the model must not be asked");
+      },
+      fieldValue: async (_input, step) => step.value ?? "",
+      assume: async () => {
+        assumed++;
+        return true;
+      },
+    },
+  );
+  expect(result.status).toBe("completed");
+  expect(executed).toEqual(["TYPE_TEXT:IPv4"]);
+  expect([asked, assumed]).toEqual([0, 0]);
+  expect(result.actions[0]).toMatchObject({ operation: "TYPE_TEXT", source: "fast", rule: "type", inferenceMs: 0 });
+  expect(result.completedSteps).toEqual([{ instruction: typeStep.instruction, verification: "deterministic" }]);
+});
+
+test("the backend is asked to be ready only for steps that reach the model", async () => {
+  let ready = 0;
+  let typed = false;
+  const dependencies = () => ({
+    browser: () => ({
+      command: async () => ({}),
+      observe: async () => searchField(typed),
+      execute: async () => {
+        typed = true;
+      },
+    }),
+    decide: async () => decision("DONE"),
+    fieldValue: async (_input: unknown, step: { value?: string | undefined }) => step.value ?? "",
+    assume: async () => true,
+    beforeModel: async () => void ready++,
+  });
+  const fast = await startRun({ ...input(), actionsPerCall: 5, steps: [typeStep] }, dependencies());
+  expect([fast.status, ready]).toEqual(["completed", 0]);
+  typed = false;
+  const modelled = await startRun(
+    { ...input(), actionsPerCall: 5, steps: [{ instruction: "Do something unusual" }] },
+    dependencies(),
+  );
+  expect([modelled.status, ready]).toEqual(["completed", 1]);
+});
+
+// Seen on the live Wikipedia example: right after a fast Enter press, the read of the step's expectation
+// failed once because the page was changing under it (a quick `eval` error from agent-browser).
+test("a failed read of the expectation right after a fast action does not fail the run", async () => {
+  let pressed = false;
+  let failed = 0;
+  let asked = 0;
+  const submit = {
+    ...observed(),
+    snapshotId: "snap",
+    targets: { PRESS_ENTER: { e0: { ref: "e0", label: "Search Wikipedia", role: "searchbox" } } },
+  };
+  const result = await startRun(
+    {
+      ...input(),
+      actionsPerCall: 5,
+      steps: [
+        { instruction: "Press Enter in the Search Wikipedia box to search", expect: { text: "App", timeoutMs: 0 } },
+      ],
+    },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => submit,
+        execute: async () => {
+          pressed = true;
+        },
+        assert: async () => {
+          if (!pressed) return { passed: false, checks: [{ passed: false, index: 0, message: "not yet" }] };
+          if (failed++ === 0) throw new RunError("BROWSER_COMMAND_FAILED", "agent-browser eval failed or timed out");
+          return { passed: true, checks: [{ passed: true, index: 0, message: "Passed" }] };
+        },
+      }),
+      decide: async () => {
+        asked++;
+        throw new Error("the model must not be asked");
+      },
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status, `${result.reasonCode}: ${result.reason}`).toBe("completed");
+  // Reads after the press: the one that failed, the loop-top check that completed the step, the final one.
+  expect([asked, failed]).toEqual([0, 3]);
+  expect(result.actions.map((action) => [action.operation, action.source])).toEqual([["PRESS_ENTER", "fast"]]);
+  expect(result.completedSteps[0]?.verification).toBe("assertion");
+});
+
+test("fastPath: false and ambiguous pages send the step to the model", async () => {
+  for (const { fastPath, copies } of [
+    { fastPath: false, copies: 1 },
+    { fastPath: true, copies: 2 },
+  ]) {
+    let asked = 0;
+    const executed: string[] = [];
+    const result = await startRun(
+      { ...input(), fastPath, actionsPerCall: 5, steps: [{ instruction: typeStep.instruction, value: "IPv4" }] },
+      {
+        browser: () => ({
+          command: async () => ({}),
+          observe: async () => searchField(false, copies),
+          execute: async (d) => {
+            executed.push(d.operation);
+          },
+        }),
+        decide: async () => {
+          asked++;
+          return decision("DONE");
+        },
+        fieldValue: async () => "unused",
+      },
+    );
+    expect(result.status).toBe("completed");
+    expect(asked).toBe(1);
+    expect(executed).toEqual([]);
+    expect(result.completedSteps[0]?.verification).toBe("model");
+  }
 });
 
 test("rejects premature DONE when an explicit completion assertion fails", async () => {
