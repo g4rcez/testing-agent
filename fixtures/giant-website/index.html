@@ -1,0 +1,65 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Giant website: pages for testing search</title>
+<style>
+  body {
+    margin: 0;
+    padding: 24px;
+    font: 15px/1.5 system-ui;
+    max-width: 880px;
+  }
+  li {
+    margin: 10px 0;
+  }
+  code {
+    background: #eee;
+    padding: 1px 5px;
+  }
+</style>
+<h1>Giant website</h1>
+<p>
+  Pages that hide most of their content: virtual lists, feeds, huge pages, repeated controls. Each one has a button or
+  link a test must reach, and says what happened in a status line.
+</p>
+<ul>
+  <li>
+    <a href="virtual-list.html">Virtual list</a>: 10,000 orders, about 30 in the page. Try
+    <code>Open order #08731</code>.
+  </li>
+  <li>
+    <a href="two-lists.html">Two virtual lists</a>: Orders and Invoices with the same rows. Try
+    <code>Open item #04217</code> in the Invoices list.
+  </li>
+  <li>
+    <a href="virtual-grid.html">Horizontal strip</a>: 1,000 columns that scroll sideways. Try
+    <code>Open column #0640</code>.
+  </li>
+  <li>
+    <a href="infinite.html">Infinite feed</a>: 15 pages that load as you scroll. Try <code>Post 170 (page 9)</code>.
+  </li>
+  <li>
+    <a href="noise.html">Noisy page</a>: 3,000 menu and footer links around one article. Try
+    <code>Confirm subscription</code>.
+  </li>
+  <li>
+    <a href="dense.html">Dense screen</a>: 600 small links on one screen, one button among them. Try
+    <code>Confirm subscription</code>.
+  </li>
+  <li>
+    <a href="precision.html">Repeated controls</a>: Edit, Delete and Pay many times. Try
+    <code>Delete in the row of Order #1002</code>, <code>the second Delete button</code>, <code>the Pay link</code>.
+  </li>
+  <li>
+    <a href="spa.html">Single-page app</a>: skeleton screens and a sticky header. Add <code>?delay=2500</code> for a
+    slow first route.
+  </li>
+  <li><a href="iframe.html">Form in an iframe</a>.</li>
+  <li>
+    <a href="billing.html">Billing, with a popup</a>: opens a window with a login (<code>demo</code> /
+    <code>s3cret!</code>) and a react-window list of 5,000 invoices.
+  </li>
+  <li>
+    <a href="anim.html?role=opener">60fps animation</a>: a frame counter in the corner and a popup, used to check
+    recordings.
+  </li>
+</ul>

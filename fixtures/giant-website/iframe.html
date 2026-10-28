@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Newsletter (iframe)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 14px system-ui;
+  }
+  iframe {
+    width: 600px;
+    height: 220px;
+    border: 1px solid #888;
+  }
+</style>
+<h1>Newsletter</h1>
+<p>The sign-up form lives in a frame served from the same site.</p>
+<iframe src="iframe-form.html" title="Signup"></iframe>
+<p id="out" role="status">Not subscribed</p>
+<script>
+  addEventListener("message", (event) => {
+    if (typeof event.data === "string" && event.data.startsWith("subscribed:"))
+      document.getElementById("out").textContent = "Subscribed: " + event.data.slice(11);
+  });
+</script>

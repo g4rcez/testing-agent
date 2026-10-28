@@ -99,6 +99,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 10000
+                  },
+                  "search": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -295,6 +298,14 @@
       "minimum": 1,
       "maximum": 60
     },
+    "videoEngine": {
+      "default": "cdp",
+      "type": "string",
+      "enum": [
+        "cdp",
+        "agent-browser"
+      ]
+    },
     "url": {
       "type": "string",
       "format": "uri"
@@ -322,6 +333,18 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 5
+    },
+    "searchScreens": {
+      "default": 400,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000
+    },
+    "searchMs": {
+      "default": 40000,
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 120000
     },
     "fastPath": {
       "default": true,
@@ -383,6 +406,9 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 10000
+          },
+          "search": {
+            "type": "boolean"
           }
         }
       }

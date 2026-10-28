@@ -1,0 +1,178 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Directory (dense)</title>
+<style>
+  body {
+    margin: 0;
+    font: 8px system-ui;
+  }
+  nav {
+    display: grid;
+    grid-template-columns: repeat(40, 1fr);
+  }
+  a {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  #confirm {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    font-size: 14px;
+  }
+  #out {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    font-size: 14px;
+  }
+</style>
+<nav aria-label="Tags">
+  <a href="#t0">T0</a><a href="#t1">T1</a><a href="#t2">T2</a><a href="#t3">T3</a><a href="#t4">T4</a
+  ><a href="#t5">T5</a><a href="#t6">T6</a><a href="#t7">T7</a><a href="#t8">T8</a><a href="#t9">T9</a
+  ><a href="#t10">T10</a><a href="#t11">T11</a><a href="#t12">T12</a><a href="#t13">T13</a><a href="#t14">T14</a
+  ><a href="#t15">T15</a><a href="#t16">T16</a><a href="#t17">T17</a><a href="#t18">T18</a><a href="#t19">T19</a
+  ><a href="#t20">T20</a><a href="#t21">T21</a><a href="#t22">T22</a><a href="#t23">T23</a><a href="#t24">T24</a
+  ><a href="#t25">T25</a><a href="#t26">T26</a><a href="#t27">T27</a><a href="#t28">T28</a><a href="#t29">T29</a
+  ><a href="#t30">T30</a><a href="#t31">T31</a><a href="#t32">T32</a><a href="#t33">T33</a><a href="#t34">T34</a
+  ><a href="#t35">T35</a><a href="#t36">T36</a><a href="#t37">T37</a><a href="#t38">T38</a><a href="#t39">T39</a
+  ><a href="#t40">T40</a><a href="#t41">T41</a><a href="#t42">T42</a><a href="#t43">T43</a><a href="#t44">T44</a
+  ><a href="#t45">T45</a><a href="#t46">T46</a><a href="#t47">T47</a><a href="#t48">T48</a><a href="#t49">T49</a
+  ><a href="#t50">T50</a><a href="#t51">T51</a><a href="#t52">T52</a><a href="#t53">T53</a><a href="#t54">T54</a
+  ><a href="#t55">T55</a><a href="#t56">T56</a><a href="#t57">T57</a><a href="#t58">T58</a><a href="#t59">T59</a
+  ><a href="#t60">T60</a><a href="#t61">T61</a><a href="#t62">T62</a><a href="#t63">T63</a><a href="#t64">T64</a
+  ><a href="#t65">T65</a><a href="#t66">T66</a><a href="#t67">T67</a><a href="#t68">T68</a><a href="#t69">T69</a
+  ><a href="#t70">T70</a><a href="#t71">T71</a><a href="#t72">T72</a><a href="#t73">T73</a><a href="#t74">T74</a
+  ><a href="#t75">T75</a><a href="#t76">T76</a><a href="#t77">T77</a><a href="#t78">T78</a><a href="#t79">T79</a
+  ><a href="#t80">T80</a><a href="#t81">T81</a><a href="#t82">T82</a><a href="#t83">T83</a><a href="#t84">T84</a
+  ><a href="#t85">T85</a><a href="#t86">T86</a><a href="#t87">T87</a><a href="#t88">T88</a><a href="#t89">T89</a
+  ><a href="#t90">T90</a><a href="#t91">T91</a><a href="#t92">T92</a><a href="#t93">T93</a><a href="#t94">T94</a
+  ><a href="#t95">T95</a><a href="#t96">T96</a><a href="#t97">T97</a><a href="#t98">T98</a><a href="#t99">T99</a
+  ><a href="#t100">T100</a><a href="#t101">T101</a><a href="#t102">T102</a><a href="#t103">T103</a
+  ><a href="#t104">T104</a><a href="#t105">T105</a><a href="#t106">T106</a><a href="#t107">T107</a
+  ><a href="#t108">T108</a><a href="#t109">T109</a><a href="#t110">T110</a><a href="#t111">T111</a
+  ><a href="#t112">T112</a><a href="#t113">T113</a><a href="#t114">T114</a><a href="#t115">T115</a
+  ><a href="#t116">T116</a><a href="#t117">T117</a><a href="#t118">T118</a><a href="#t119">T119</a
+  ><a href="#t120">T120</a><a href="#t121">T121</a><a href="#t122">T122</a><a href="#t123">T123</a
+  ><a href="#t124">T124</a><a href="#t125">T125</a><a href="#t126">T126</a><a href="#t127">T127</a
+  ><a href="#t128">T128</a><a href="#t129">T129</a><a href="#t130">T130</a><a href="#t131">T131</a
+  ><a href="#t132">T132</a><a href="#t133">T133</a><a href="#t134">T134</a><a href="#t135">T135</a
+  ><a href="#t136">T136</a><a href="#t137">T137</a><a href="#t138">T138</a><a href="#t139">T139</a
+  ><a href="#t140">T140</a><a href="#t141">T141</a><a href="#t142">T142</a><a href="#t143">T143</a
+  ><a href="#t144">T144</a><a href="#t145">T145</a><a href="#t146">T146</a><a href="#t147">T147</a
+  ><a href="#t148">T148</a><a href="#t149">T149</a><a href="#t150">T150</a><a href="#t151">T151</a
+  ><a href="#t152">T152</a><a href="#t153">T153</a><a href="#t154">T154</a><a href="#t155">T155</a
+  ><a href="#t156">T156</a><a href="#t157">T157</a><a href="#t158">T158</a><a href="#t159">T159</a
+  ><a href="#t160">T160</a><a href="#t161">T161</a><a href="#t162">T162</a><a href="#t163">T163</a
+  ><a href="#t164">T164</a><a href="#t165">T165</a><a href="#t166">T166</a><a href="#t167">T167</a
+  ><a href="#t168">T168</a><a href="#t169">T169</a><a href="#t170">T170</a><a href="#t171">T171</a
+  ><a href="#t172">T172</a><a href="#t173">T173</a><a href="#t174">T174</a><a href="#t175">T175</a
+  ><a href="#t176">T176</a><a href="#t177">T177</a><a href="#t178">T178</a><a href="#t179">T179</a
+  ><a href="#t180">T180</a><a href="#t181">T181</a><a href="#t182">T182</a><a href="#t183">T183</a
+  ><a href="#t184">T184</a><a href="#t185">T185</a><a href="#t186">T186</a><a href="#t187">T187</a
+  ><a href="#t188">T188</a><a href="#t189">T189</a><a href="#t190">T190</a><a href="#t191">T191</a
+  ><a href="#t192">T192</a><a href="#t193">T193</a><a href="#t194">T194</a><a href="#t195">T195</a
+  ><a href="#t196">T196</a><a href="#t197">T197</a><a href="#t198">T198</a><a href="#t199">T199</a
+  ><a href="#t200">T200</a><a href="#t201">T201</a><a href="#t202">T202</a><a href="#t203">T203</a
+  ><a href="#t204">T204</a><a href="#t205">T205</a><a href="#t206">T206</a><a href="#t207">T207</a
+  ><a href="#t208">T208</a><a href="#t209">T209</a><a href="#t210">T210</a><a href="#t211">T211</a
+  ><a href="#t212">T212</a><a href="#t213">T213</a><a href="#t214">T214</a><a href="#t215">T215</a
+  ><a href="#t216">T216</a><a href="#t217">T217</a><a href="#t218">T218</a><a href="#t219">T219</a
+  ><a href="#t220">T220</a><a href="#t221">T221</a><a href="#t222">T222</a><a href="#t223">T223</a
+  ><a href="#t224">T224</a><a href="#t225">T225</a><a href="#t226">T226</a><a href="#t227">T227</a
+  ><a href="#t228">T228</a><a href="#t229">T229</a><a href="#t230">T230</a><a href="#t231">T231</a
+  ><a href="#t232">T232</a><a href="#t233">T233</a><a href="#t234">T234</a><a href="#t235">T235</a
+  ><a href="#t236">T236</a><a href="#t237">T237</a><a href="#t238">T238</a><a href="#t239">T239</a
+  ><a href="#t240">T240</a><a href="#t241">T241</a><a href="#t242">T242</a><a href="#t243">T243</a
+  ><a href="#t244">T244</a><a href="#t245">T245</a><a href="#t246">T246</a><a href="#t247">T247</a
+  ><a href="#t248">T248</a><a href="#t249">T249</a><a href="#t250">T250</a><a href="#t251">T251</a
+  ><a href="#t252">T252</a><a href="#t253">T253</a><a href="#t254">T254</a><a href="#t255">T255</a
+  ><a href="#t256">T256</a><a href="#t257">T257</a><a href="#t258">T258</a><a href="#t259">T259</a
+  ><a href="#t260">T260</a><a href="#t261">T261</a><a href="#t262">T262</a><a href="#t263">T263</a
+  ><a href="#t264">T264</a><a href="#t265">T265</a><a href="#t266">T266</a><a href="#t267">T267</a
+  ><a href="#t268">T268</a><a href="#t269">T269</a><a href="#t270">T270</a><a href="#t271">T271</a
+  ><a href="#t272">T272</a><a href="#t273">T273</a><a href="#t274">T274</a><a href="#t275">T275</a
+  ><a href="#t276">T276</a><a href="#t277">T277</a><a href="#t278">T278</a><a href="#t279">T279</a
+  ><a href="#t280">T280</a><a href="#t281">T281</a><a href="#t282">T282</a><a href="#t283">T283</a
+  ><a href="#t284">T284</a><a href="#t285">T285</a><a href="#t286">T286</a><a href="#t287">T287</a
+  ><a href="#t288">T288</a><a href="#t289">T289</a><a href="#t290">T290</a><a href="#t291">T291</a
+  ><a href="#t292">T292</a><a href="#t293">T293</a><a href="#t294">T294</a><a href="#t295">T295</a
+  ><a href="#t296">T296</a><a href="#t297">T297</a><a href="#t298">T298</a><a href="#t299">T299</a
+  ><a href="#t300">T300</a><a href="#t301">T301</a><a href="#t302">T302</a><a href="#t303">T303</a
+  ><a href="#t304">T304</a><a href="#t305">T305</a><a href="#t306">T306</a><a href="#t307">T307</a
+  ><a href="#t308">T308</a><a href="#t309">T309</a><a href="#t310">T310</a><a href="#t311">T311</a
+  ><a href="#t312">T312</a><a href="#t313">T313</a><a href="#t314">T314</a><a href="#t315">T315</a
+  ><a href="#t316">T316</a><a href="#t317">T317</a><a href="#t318">T318</a><a href="#t319">T319</a
+  ><a href="#t320">T320</a><a href="#t321">T321</a><a href="#t322">T322</a><a href="#t323">T323</a
+  ><a href="#t324">T324</a><a href="#t325">T325</a><a href="#t326">T326</a><a href="#t327">T327</a
+  ><a href="#t328">T328</a><a href="#t329">T329</a><a href="#t330">T330</a><a href="#t331">T331</a
+  ><a href="#t332">T332</a><a href="#t333">T333</a><a href="#t334">T334</a><a href="#t335">T335</a
+  ><a href="#t336">T336</a><a href="#t337">T337</a><a href="#t338">T338</a><a href="#t339">T339</a
+  ><a href="#t340">T340</a><a href="#t341">T341</a><a href="#t342">T342</a><a href="#t343">T343</a
+  ><a href="#t344">T344</a><a href="#t345">T345</a><a href="#t346">T346</a><a href="#t347">T347</a
+  ><a href="#t348">T348</a><a href="#t349">T349</a><a href="#t350">T350</a><a href="#t351">T351</a
+  ><a href="#t352">T352</a><a href="#t353">T353</a><a href="#t354">T354</a><a href="#t355">T355</a
+  ><a href="#t356">T356</a><a href="#t357">T357</a><a href="#t358">T358</a><a href="#t359">T359</a
+  ><a href="#t360">T360</a><a href="#t361">T361</a><a href="#t362">T362</a><a href="#t363">T363</a
+  ><a href="#t364">T364</a><a href="#t365">T365</a><a href="#t366">T366</a><a href="#t367">T367</a
+  ><a href="#t368">T368</a><a href="#t369">T369</a><a href="#t370">T370</a><a href="#t371">T371</a
+  ><a href="#t372">T372</a><a href="#t373">T373</a><a href="#t374">T374</a><a href="#t375">T375</a
+  ><a href="#t376">T376</a><a href="#t377">T377</a><a href="#t378">T378</a><a href="#t379">T379</a
+  ><a href="#t380">T380</a><a href="#t381">T381</a><a href="#t382">T382</a><a href="#t383">T383</a
+  ><a href="#t384">T384</a><a href="#t385">T385</a><a href="#t386">T386</a><a href="#t387">T387</a
+  ><a href="#t388">T388</a><a href="#t389">T389</a><a href="#t390">T390</a><a href="#t391">T391</a
+  ><a href="#t392">T392</a><a href="#t393">T393</a><a href="#t394">T394</a><a href="#t395">T395</a
+  ><a href="#t396">T396</a><a href="#t397">T397</a><a href="#t398">T398</a><a href="#t399">T399</a
+  ><a href="#t400">T400</a><a href="#t401">T401</a><a href="#t402">T402</a><a href="#t403">T403</a
+  ><a href="#t404">T404</a><a href="#t405">T405</a><a href="#t406">T406</a><a href="#t407">T407</a
+  ><a href="#t408">T408</a><a href="#t409">T409</a><a href="#t410">T410</a><a href="#t411">T411</a
+  ><a href="#t412">T412</a><a href="#t413">T413</a><a href="#t414">T414</a><a href="#t415">T415</a
+  ><a href="#t416">T416</a><a href="#t417">T417</a><a href="#t418">T418</a><a href="#t419">T419</a
+  ><a href="#t420">T420</a><a href="#t421">T421</a><a href="#t422">T422</a><a href="#t423">T423</a
+  ><a href="#t424">T424</a><a href="#t425">T425</a><a href="#t426">T426</a><a href="#t427">T427</a
+  ><a href="#t428">T428</a><a href="#t429">T429</a><a href="#t430">T430</a><a href="#t431">T431</a
+  ><a href="#t432">T432</a><a href="#t433">T433</a><a href="#t434">T434</a><a href="#t435">T435</a
+  ><a href="#t436">T436</a><a href="#t437">T437</a><a href="#t438">T438</a><a href="#t439">T439</a
+  ><a href="#t440">T440</a><a href="#t441">T441</a><a href="#t442">T442</a><a href="#t443">T443</a
+  ><a href="#t444">T444</a><a href="#t445">T445</a><a href="#t446">T446</a><a href="#t447">T447</a
+  ><a href="#t448">T448</a><a href="#t449">T449</a><a href="#t450">T450</a><a href="#t451">T451</a
+  ><a href="#t452">T452</a><a href="#t453">T453</a><a href="#t454">T454</a><a href="#t455">T455</a
+  ><a href="#t456">T456</a><a href="#t457">T457</a><a href="#t458">T458</a><a href="#t459">T459</a
+  ><a href="#t460">T460</a><a href="#t461">T461</a><a href="#t462">T462</a><a href="#t463">T463</a
+  ><a href="#t464">T464</a><a href="#t465">T465</a><a href="#t466">T466</a><a href="#t467">T467</a
+  ><a href="#t468">T468</a><a href="#t469">T469</a><a href="#t470">T470</a><a href="#t471">T471</a
+  ><a href="#t472">T472</a><a href="#t473">T473</a><a href="#t474">T474</a><a href="#t475">T475</a
+  ><a href="#t476">T476</a><a href="#t477">T477</a><a href="#t478">T478</a><a href="#t479">T479</a
+  ><a href="#t480">T480</a><a href="#t481">T481</a><a href="#t482">T482</a><a href="#t483">T483</a
+  ><a href="#t484">T484</a><a href="#t485">T485</a><a href="#t486">T486</a><a href="#t487">T487</a
+  ><a href="#t488">T488</a><a href="#t489">T489</a><a href="#t490">T490</a><a href="#t491">T491</a
+  ><a href="#t492">T492</a><a href="#t493">T493</a><a href="#t494">T494</a><a href="#t495">T495</a
+  ><a href="#t496">T496</a><a href="#t497">T497</a><a href="#t498">T498</a><a href="#t499">T499</a
+  ><a href="#t500">T500</a><a href="#t501">T501</a><a href="#t502">T502</a><a href="#t503">T503</a
+  ><a href="#t504">T504</a><a href="#t505">T505</a><a href="#t506">T506</a><a href="#t507">T507</a
+  ><a href="#t508">T508</a><a href="#t509">T509</a><a href="#t510">T510</a><a href="#t511">T511</a
+  ><a href="#t512">T512</a><a href="#t513">T513</a><a href="#t514">T514</a><a href="#t515">T515</a
+  ><a href="#t516">T516</a><a href="#t517">T517</a><a href="#t518">T518</a><a href="#t519">T519</a
+  ><a href="#t520">T520</a><a href="#t521">T521</a><a href="#t522">T522</a><a href="#t523">T523</a
+  ><a href="#t524">T524</a><a href="#t525">T525</a><a href="#t526">T526</a><a href="#t527">T527</a
+  ><a href="#t528">T528</a><a href="#t529">T529</a><a href="#t530">T530</a><a href="#t531">T531</a
+  ><a href="#t532">T532</a><a href="#t533">T533</a><a href="#t534">T534</a><a href="#t535">T535</a
+  ><a href="#t536">T536</a><a href="#t537">T537</a><a href="#t538">T538</a><a href="#t539">T539</a
+  ><a href="#t540">T540</a><a href="#t541">T541</a><a href="#t542">T542</a><a href="#t543">T543</a
+  ><a href="#t544">T544</a><a href="#t545">T545</a><a href="#t546">T546</a><a href="#t547">T547</a
+  ><a href="#t548">T548</a><a href="#t549">T549</a><a href="#t550">T550</a><a href="#t551">T551</a
+  ><a href="#t552">T552</a><a href="#t553">T553</a><a href="#t554">T554</a><a href="#t555">T555</a
+  ><a href="#t556">T556</a><a href="#t557">T557</a><a href="#t558">T558</a><a href="#t559">T559</a
+  ><a href="#t560">T560</a><a href="#t561">T561</a><a href="#t562">T562</a><a href="#t563">T563</a
+  ><a href="#t564">T564</a><a href="#t565">T565</a><a href="#t566">T566</a><a href="#t567">T567</a
+  ><a href="#t568">T568</a><a href="#t569">T569</a><a href="#t570">T570</a><a href="#t571">T571</a
+  ><a href="#t572">T572</a><a href="#t573">T573</a><a href="#t574">T574</a><a href="#t575">T575</a
+  ><a href="#t576">T576</a><a href="#t577">T577</a><a href="#t578">T578</a><a href="#t579">T579</a
+  ><a href="#t580">T580</a><a href="#t581">T581</a><a href="#t582">T582</a><a href="#t583">T583</a
+  ><a href="#t584">T584</a><a href="#t585">T585</a><a href="#t586">T586</a><a href="#t587">T587</a
+  ><a href="#t588">T588</a><a href="#t589">T589</a><a href="#t590">T590</a><a href="#t591">T591</a
+  ><a href="#t592">T592</a><a href="#t593">T593</a><a href="#t594">T594</a><a href="#t595">T595</a
+  ><a href="#t596">T596</a><a href="#t597">T597</a><a href="#t598">T598</a><a href="#t599">T599</a>
+</nav>
+<p id="out" role="status">Not confirmed</p>
+<button id="confirm" onclick="out.textContent = 'Subscription confirmed'">Confirm subscription</button>

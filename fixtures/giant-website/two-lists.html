@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Orders and invoices (two virtual lists)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 14px system-ui;
+  }
+  .lists {
+    display: flex;
+    gap: 24px;
+  }
+  .list {
+    height: 360px;
+    width: 360px;
+    overflow-y: auto;
+    position: relative;
+    border: 1px solid #888;
+  }
+  .spacer {
+    position: relative;
+  }
+  .row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee;
+  }
+</style>
+<h1>Orders and invoices</h1>
+<p>Both lists have 10,000 rows with the same labels. Only the rows near the view are in the page.</p>
+<div class="lists" id="lists"></div>
+<p id="out" role="status">Nothing opened</p>
+<script>
+  const TOTAL = 10000,
+    ROW = 40,
+    POOL = 24;
+  const label = (n) => "#" + String(n).padStart(5, "0");
+  function virtualList(name) {
+    const list = document.createElement("div");
+    list.className = "list";
+    list.setAttribute("role", "list");
+    list.setAttribute("aria-label", name);
+    const spacer = document.createElement("div");
+    spacer.className = "spacer";
+    spacer.style.height = TOTAL * ROW + "px";
+    list.append(spacer);
+    const pool = Array.from({ length: POOL }, () => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.setAttribute("role", "listitem");
+      const button = document.createElement("button");
+      row.append(button);
+      spacer.append(row);
+      return { row, button };
+    });
+    function render() {
+      const first = Math.min(TOTAL - POOL, Math.max(0, Math.floor(list.scrollTop / ROW) - 4));
+      pool.forEach(({ row, button }, offset) => {
+        const index = first + offset;
+        row.style.transform = "translateY(" + index * ROW + "px)";
+        button.textContent = "Open item " + label(index + 1);
+        button.onclick = () => {
+          document.getElementById("out").textContent = "Opened " + name.toLowerCase() + " item " + label(index + 1);
+        };
+      });
+    }
+    list.addEventListener("scroll", render);
+    render();
+    return list;
+  }
+  document.getElementById("lists").append(virtualList("Orders"), virtualList("Invoices"));
+</script>

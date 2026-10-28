@@ -70,6 +70,8 @@ export const assertionSchema = z
     checked: z.boolean().optional(),
     count: z.number().int().min(0).max(10000).optional(),
     timeoutMs: z.number().int().min(0).max(10000).default(2000),
+    // A text check that fails scrolls the page, and the lists and feeds in it, looking for the text before it gives up.
+    search: z.boolean().optional(),
   })
   .refine(
     (value) => value.text !== undefined || value.url !== undefined || value.selector !== undefined,
@@ -80,7 +82,8 @@ export const assertionSchema = z
       value.selector !== undefined ||
       [value.visible, value.value, value.checked, value.count].every((item) => item === undefined),
     "Element assertions require a selector",
-  );
+  )
+  .refine((value) => value.search === undefined || value.text !== undefined, "Searching applies to text assertions");
 export type Assertion = z.infer<typeof assertionSchema>;
 export const stepSchema = z
   .object({
@@ -150,6 +153,9 @@ export const runSchema = z
     browser: browserSchema.optional(),
     recordVideo: z.boolean().optional(),
     videoFps: z.number().int().min(1).max(60).default(60),
+    // "cdp" films the tab the test is working in, pop-ups and new tabs included, as one constant-rate video;
+    // "agent-browser" uses its own recorder, which films only the tab that was active when it started.
+    videoEngine: z.enum(["cdp", "agent-browser"]).default("cdp"),
     url: z
       .url()
       .refine((value) => ["http:", "https:", "file:"].includes(new URL(value).protocol), "Unsupported app URL")
@@ -158,6 +164,9 @@ export const runSchema = z
     maxStepDecisions: z.number().int().min(1).max(100).default(20),
     actionsPerCall: z.number().int().min(1).max(200).default(20),
     blockedRetries: z.number().int().min(0).max(5).default(2),
+    // A control that is not on screen is searched for by scrolling; these bound one search, in screens and time.
+    searchScreens: z.number().int().min(1).max(2000).default(400),
+    searchMs: z.number().int().min(1000).max(120_000).default(40_000),
     // Resolve unambiguous steps from the page without the model; false sends every step to the model.
     fastPath: z.boolean().default(true),
     timeoutMs: z.number().int().min(1000).max(45_000).default(45_000),
@@ -190,8 +199,21 @@ export type Target = {
   role?: string;
   currentValue?: string | undefined;
   checked?: string | undefined;
+  // The control matches the selector of the current step.
+  bound?: boolean | undefined;
+  // What the control sits in: the text of its row, the labels or headings of the sections, lists and dialogs around it.
+  context?: string | undefined;
   // For a scrollable container: what it still holds out of view.
-  scroll?: { progress: number; below: number; above: number; belowLabels: string[]; aboveLabels: string[] } | undefined;
+  scroll?:
+    | {
+        progress: number;
+        below: number;
+        above: number;
+        belowLabels: string[];
+        aboveLabels: string[];
+        virtual?: { rendered: number; total?: number | undefined } | undefined;
+      }
+    | undefined;
 };
 export type Element = {
   index: string;
@@ -210,6 +232,9 @@ export type Observation = {
   snapshotId?: string;
   documentId?: string;
   controls?: string[];
+  // Controls the page has outside the visible area, best matches for the step first, and how many more there are.
+  offscreen?: string[] | undefined;
+  offscreenMore?: number | undefined;
   title?: string;
   text?: string;
 };

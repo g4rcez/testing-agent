@@ -7,10 +7,19 @@ export type ScrollInfo = {
   above: number;
   belowLabels: string[];
   aboveLabels: string[];
+  // A virtualized list: only some of its rows exist in the page, so the labels above are a sample, not all of it.
+  virtual?: { rendered: number; total?: number };
 };
 
 export type PageRequest =
-  | { type: "observe"; dialogs?: DialogPolicy | undefined }
+  | {
+      type: "observe";
+      dialogs?: DialogPolicy | undefined;
+      bind?: string | undefined;
+      // What the current step is about; when more controls are on screen than can be offered, these come first.
+      goal?: string | undefined;
+      depth?: number | undefined;
+    }
   | {
       type: "execute";
       dialogs?: DialogPolicy | undefined;
@@ -21,7 +30,26 @@ export type PageRequest =
       text?: string | undefined;
       expectedSelector?: string | undefined;
     }
-  | { type: "receipt"; actionId: string };
+  | { type: "receipt"; actionId: string }
+  | {
+      type: "search";
+      dialogs?: DialogPolicy | undefined;
+      needle: string;
+      sliceMs: number;
+      maxScreens: number;
+      // "control" looks for a control by its label, "text" for visible text anywhere in a container.
+      mode?: "control" | "text" | undefined;
+      // Where the control is: words of the row, section or list it sits in.
+      within?: string | undefined;
+    };
+
+// What one slice of a search found. "more" means the slice ran out of time, not that the page ran out of content.
+export type SearchOutcome = {
+  status: "found" | "end" | "more" | "budget";
+  screens: number;
+  container: string;
+  label?: string | undefined;
+};
 
 export function pageBridge(request: PageRequest): unknown {
   type Candidate = {
@@ -32,6 +60,8 @@ export function pageBridge(request: PageRequest): unknown {
     currentValue?: string;
     checked?: string;
     scroll?: ScrollInfo;
+    bound?: boolean;
+    context?: string;
   };
   type Bound = {
     node: HTMLElement;
@@ -53,7 +83,10 @@ export function pageBridge(request: PageRequest): unknown {
     policy: DialogPolicy;
     ids: WeakMap<HTMLElement, string>;
     next: number;
-    snapshots: Map<string, { page: string; targets: Map<string, Bound> }>;
+    snapshots: Map<
+      string,
+      { page: string; targets: Map<string, Bound>; frames: Map<string, { win: Window; snapshotId: string }> }
+    >;
     receipts: Map<string, Receipt>;
   };
   const scope = window as Window & { __agentBrowserJev?: Registry };
@@ -85,6 +118,26 @@ export function pageBridge(request: PageRequest): unknown {
     window.prompt = (message?: string, fallback?: string) => {
       remember("prompt", message);
       return registry.policy.policy === "accept" ? (registry.policy.promptText ?? fallback ?? "") : null;
+    };
+  }
+  // Requests in flight count as "not settled yet" for a search; counting starts with the first observation of
+  // the document, so a request a click started is seen when the search comes after it.
+  type Net = { busy: number; wrapped: boolean };
+  const net = ((scope as Window & { __agentBrowserJevNet?: Net }).__agentBrowserJevNet ??= { busy: 0, wrapped: false });
+  if (!net.wrapped) {
+    net.wrapped = true;
+    const originalFetch = window.fetch;
+    window.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+      net.busy++;
+      return originalFetch.apply(window, args).finally(() => {
+        net.busy--;
+      });
+    } as typeof fetch;
+    const originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, ...args: Parameters<XMLHttpRequest["send"]>) {
+      net.busy++;
+      this.addEventListener("loadend", () => void net.busy--, { once: true });
+      return originalSend.apply(this, args);
     };
   }
   const roots: Array<Document | ShadowRoot> = [document];
@@ -247,11 +300,307 @@ export function pageBridge(request: PageRequest): unknown {
     return false;
   };
 
+  const parentOf = (node: Element): HTMLElement | null =>
+    node.parentElement ?? ((node.getRootNode() as ShadowRoot).host as HTMLElement | undefined) ?? null;
+  // What a control sits in, for telling apart controls that say the same: the text of its row, the labels or
+  // headings of the sections, lists and dialogs around it, nearest first.
+  const placeOf = (node: HTMLElement): string => {
+    const clean = (text: string | null | undefined, max: number) =>
+      (text ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+    const parts: string[] = [];
+    let level = 0;
+    for (let up = parentOf(node); up && parts.length < 5 && level < 12; up = parentOf(up), level++) {
+      const named = up.getAttribute("aria-label") || (up.getAttribute("aria-labelledby") ?? "");
+      if (up.matches('tr,li,[role="row"],[role="listitem"]')) parts.push(clean(up.textContent, 120));
+      else if (
+        named ||
+        up.matches('section,article,fieldset,dialog,details,form,[role="dialog"],[role="group"],[role="region"]')
+      ) {
+        const referenced = named
+          .split(/\s+/)
+          .map((key) => document.getElementById(key)?.textContent ?? "")
+          .join(" ");
+        const label = up.getAttribute("aria-label") || referenced.trim();
+        parts.push(
+          clean(label || up.querySelector("h1,h2,h3,h4,h5,h6,legend,caption,[role=heading]")?.textContent, 80),
+        );
+      }
+    }
+    return parts.filter(Boolean).join(" | ");
+  };
+  // Looks for a control by its label in a page that does not render everything at once: virtualized lists,
+  // infinite feeds, long pages. It scrolls the container most likely to hold the label, waits for the page to
+  // settle, and looks again, because rows are recycled and appended while it scrolls.
+  if (request.type === "search") {
+    const search = request;
+    return (async (): Promise<SearchOutcome> => {
+      const fold = (text: string) =>
+        text
+          .normalize("NFKD")
+          .replace(/\p{M}+/gu, "")
+          .toLowerCase();
+      const split = (text: string) =>
+        fold(text)
+          .split(/[^\p{L}\p{N}]+/u)
+          .filter(Boolean);
+      const wanted = split(search.needle);
+      const wantedNumbers = wanted.filter((word) => /^\d+$/.test(word)).map(Number);
+      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      // A hidden tab never paints, so a frame can be late; never wait for one longer than a moment.
+      const frame = () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+          setTimeout(resolve, 60);
+        });
+      // Quiet means: no DOM change for a moment, nothing marked busy, no request in flight.
+      const settle = async (limit = 1500): Promise<boolean> => {
+        const started = Date.now();
+        let last = started;
+        const observer = new MutationObserver(() => void (last = Date.now()));
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+        });
+        try {
+          await frame();
+          await frame();
+          for (;;) {
+            const busy = net.busy > 0 || Boolean(document.querySelector('[aria-busy="true"]'));
+            if (!busy && Date.now() - last >= 100) return true;
+            if (Date.now() - started > limit) return false;
+            await sleep(30);
+          }
+        } finally {
+          observer.disconnect();
+        }
+      };
+
+      // A page that is still loading (a skeleton, a request in flight) does not yet say what it holds: wait for it
+      // before looking, and if it does not settle in this slice, ask to be called again rather than say "not found".
+      if (!(await settle(Math.min(search.sliceMs, 8000)))) return { status: "more", screens: 0, container: "" };
+
+      type Area = { node: HTMLElement; page: boolean; label: string; across?: boolean };
+      const pageNode = (document.scrollingElement ?? document.documentElement) as HTMLElement;
+      const areas: Area[] = [];
+      if (pageNode.scrollHeight > innerHeight + 4) areas.push({ node: pageNode, page: true, label: "Page" });
+      for (const node of nodes) {
+        if (node === document.body || node === document.documentElement || areas.length >= 40) continue;
+        const style = getComputedStyle(node);
+        const scrolls = ["auto", "scroll", "overlay"];
+        const label =
+          node.getAttribute("aria-label") || (node.id ? `Scrollable #${node.id.slice(0, 20)}` : "Scrollable area");
+        if (!visible(node)) continue;
+        if (node.scrollHeight > node.clientHeight + 4 && node.clientHeight >= 40 && scrolls.includes(style.overflowY))
+          areas.push({ node, page: false, label });
+        // A container that scrolls sideways is searched along its width.
+        if (node.scrollWidth > node.clientWidth + 4 && node.clientWidth >= 40 && scrolls.includes(style.overflowX))
+          areas.push({ node, page: false, label, across: true });
+      }
+      // Only the controls that hold no other control: a grid or a row is named by all the text inside it, and
+      // would match every label of the rows it holds.
+      const interactive = 'a[href],button,input,textarea,select,summary,[contenteditable="true"],[role]';
+      const controls = (area: Area) =>
+        Array.from((area.page ? document : area.node).querySelectorAll<HTMLElement>(interactive))
+          .filter((node) => !node.querySelector(interactive) && visible(node))
+          .flatMap((node) => {
+            const label = name(node);
+            return label ? [{ node, label }] : [];
+          });
+      const covers = (label: string) => {
+        const have = new Set(split(label));
+        return wanted.every((word) => have.has(word));
+      };
+      const overlap = (label: string) => {
+        const have = new Set(split(label));
+        return wanted.filter((word) => have.has(word)).length / wanted.length;
+      };
+      // Text mode: the wanted text is looked for in what the container shows, not in the labels of its controls.
+      const textMode = search.mode === "text";
+      const squash = (text: string) => fold(text).replace(/\s+/g, " ").trim();
+      const wantedText = squash(search.needle);
+      const textHit = (area: Area): { node: HTMLElement; label: string } | undefined => {
+        const root = area.page ? document.body : area.node;
+        if (!squash(root.innerText).includes(wantedText)) return undefined;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let at = walker.nextNode(); at; at = walker.nextNode()) {
+          const parent = at.parentElement;
+          if (parent && squash(at.textContent ?? "").includes(wantedText) && visible(parent))
+            return { node: parent, label: search.needle };
+        }
+        return { node: root, label: search.needle };
+      };
+      // A control in the place the step asked for: the words of the row or section are among those around it.
+      const wantedPlace = split(search.within ?? "");
+      const mentionsPlace = (text: string) => {
+        const have = new Set(split(text));
+        return wantedPlace.every((word) => have.has(word));
+      };
+      // A control with nothing around it that the page can name is not known to be elsewhere.
+      const inPlace = (node: HTMLElement) => {
+        const around = placeOf(node);
+        return !wantedPlace.length || !around || mentionsPlace(around);
+      };
+      const hit = (area: Area) =>
+        textMode ? textHit(area) : controls(area).find((item) => covers(item.label) && inPlace(item.node));
+      if (!wanted.length || !areas.length) {
+        const only = pageNode.scrollHeight > innerHeight + 4 ? "Page" : "";
+        return {
+          status: hit({ node: pageNode, page: true, label: "Page" }) ? "found" : "end",
+          screens: 0,
+          container: only,
+        };
+      }
+
+      // The container whose controls look most like the wanted one; the smallest of equals, since the page
+      // contains every other container. With no resemblance anywhere, the page, else the biggest container.
+      const scored = areas.map((area) => ({
+        area,
+        // A container named like the place asked for ("in the Invoices list") is the one to look in.
+        score:
+          (wantedPlace.length && mentionsPlace(area.label) ? 1 : 0) +
+          (textMode
+            ? overlap((area.page ? document.body : area.node).innerText.slice(0, 50_000))
+            : Math.max(0, ...controls(area).map((item) => overlap(item.label)))),
+      }));
+      const best = Math.max(...scored.map((item) => item.score));
+      const pool = best > 0 ? scored.filter((item) => item.score === best) : scored;
+      const area = (
+        best > 0
+          ? pool.sort((a, b) => a.area.node.clientHeight - b.area.node.clientHeight)
+          : pool.sort(
+              (a, b) =>
+                Number(b.area.page) - Number(a.area.page) || b.area.node.clientHeight - a.area.node.clientHeight,
+            )
+      )[0]!.area;
+      const node = area.node;
+      const across = area.across === true;
+      const top = () => (across ? node.scrollLeft : area.page ? scrollY : node.scrollTop);
+      const height = () =>
+        across ? node.scrollWidth : area.page ? document.documentElement.scrollHeight : node.scrollHeight;
+      const view = () => (across ? node.clientWidth : area.page ? innerHeight : node.clientHeight);
+      const limit = () => Math.max(0, height() - view());
+      const go = (y: number) => {
+        if (across) node.scrollTo({ left: y, behavior: "instant" });
+        else if (area.page) window.scrollTo({ top: y, behavior: "instant" });
+        else node.scrollTo({ top: y, behavior: "instant" });
+      };
+      // A control's place along the container's content, which does not change while the container scrolls.
+      const place = (control: HTMLElement) =>
+        across
+          ? control.getBoundingClientRect().left + node.scrollLeft - node.getBoundingClientRect().left
+          : control.getBoundingClientRect().top +
+            (area.page ? scrollY : node.scrollTop - node.getBoundingClientRect().top);
+      const find = () => hit(area);
+
+      // Rows often carry a number (order #08731, item 170) and are sorted by it. Two rows give the rate, and
+      // the rate says where the wanted number is, which beats scrolling a screen at a time through 10,000 rows.
+      const aim = (items: ReturnType<typeof controls>): number | null => {
+        for (const [index, target] of wantedNumbers.entries()) {
+          const samples = items
+            .flatMap(({ node: control, label }) => {
+              const value = split(label)
+                .filter((word) => /^\d+$/.test(word))
+                .map(Number)[index];
+              return value === undefined ? [] : [{ y: place(control), n: value }];
+            })
+            .sort((a, b) => a.y - b.y);
+          const first = samples[0],
+            last = samples.at(-1);
+          if (!first || !last || first.n === last.n || first.y === last.y) continue;
+          const ascending = last.n > first.n;
+          const sorted = samples.every(
+            (sample, at) => at === 0 || (ascending ? sample.n >= samples[at - 1]!.n : sample.n <= samples[at - 1]!.n),
+          );
+          if (!sorted) continue;
+          const near = samples.reduce((a, b) => (Math.abs(b.n - target) < Math.abs(a.n - target) ? b : a));
+          return near.y + (target - near.n) / ((last.n - first.n) / (last.y - first.y));
+        }
+        return null;
+      };
+
+      // The control found, brought to the middle of its container. Recycled rows can change under it while it
+      // scrolls, so look it up again until it is where it was brought to.
+      const arrive = async (): Promise<string | null> => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const item = find();
+          if (!item) return null;
+          item.node.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+          await settle();
+          const again = find();
+          if (!again) continue;
+          const rect = again.node.getBoundingClientRect();
+          if (
+            rect.top >= 0 &&
+            rect.bottom <= innerHeight &&
+            rect.left >= 0 &&
+            rect.right <= innerWidth &&
+            rect.height > 0
+          )
+            return again.label;
+        }
+        return find()?.label ?? null;
+      };
+
+      const deadline = Date.now() + search.sliceMs;
+      let screens = 0,
+        stuck = 0,
+        sureNotHere = 0;
+      for (;;) {
+        const items = controls(area);
+        if (find()) {
+          const label = await arrive();
+          if (label !== null) return { status: "found", screens, container: area.label, label };
+        }
+        if (screens >= search.maxScreens) return { status: "budget", screens, container: area.label };
+        if (Date.now() >= deadline) return { status: "more", screens, container: area.label };
+        const here = top();
+        const heightBefore = height();
+        const aimed = aim(items);
+        // Rows that are rendered beyond the visible ones say how far a step can go without skipping any.
+        const places = items.map((item) => place(item.node));
+        const span = places.length ? Math.max(...places) - Math.min(...places) : 0;
+        const step = Math.min(view() * 5, Math.max(60, view() * 0.8, span * 0.8));
+        let next = here + step;
+        if (aimed !== null) {
+          const goal = Math.min(limit(), Math.max(0, aimed - view() / 2));
+          // The estimate says "right here" and the row is not here: the sorted list does not have it.
+          if (Math.abs(goal - here) <= 4 && goal < limit()) {
+            if (++sureNotHere >= 2) return { status: "end", screens, container: area.label };
+          } else sureNotHere = 0;
+          if (Math.abs(goal - here) > 4) next = goal;
+        }
+        go(Math.min(limit(), next));
+        screens++;
+        await settle();
+        // At the bottom with nothing new for a moment and again after a grace period: this is the end.
+        if (Math.abs(top() - here) < 1 && height() === heightBefore) {
+          if (++stuck >= 2) return { status: "end", screens, container: area.label };
+          await sleep(700);
+        } else stuck = 0;
+      }
+    })();
+  }
+
   if (request.type === "execute") {
     const oldReceipt = registry.receipts.get(request.actionId);
     if (oldReceipt) return oldReceipt;
     const snapshot = registry.snapshots.get(request.snapshotId);
     if (!snapshot || snapshot.page !== pageKey()) return { status: "stale", reason: "document-or-form-changed" };
+    // A target inside a frame is "<frame>/<target>": the frame has its own copy of this script, which knows it.
+    const slash = request.targetId?.indexOf("/") ?? -1;
+    if (request.targetId && slash > 0) {
+      const frame = snapshot.frames.get(request.targetId.slice(0, slash));
+      if (!frame) return { status: "stale", reason: "frame-not-observed" };
+      try {
+        return (frame.win as Window & typeof globalThis).eval(
+          `(${pageBridge.toString()})(${JSON.stringify({ ...request, snapshotId: frame.snapshotId, targetId: request.targetId.slice(slash + 1) })})`,
+        );
+      } catch {
+        return { status: "stale", reason: "frame-unavailable" };
+      }
+    }
     const bound = request.targetId ? snapshot.targets.get(`${request.operation}:${request.targetId}`) : undefined;
     if (request.expectedSelector && bound) {
       try {
@@ -268,16 +617,29 @@ export function pageBridge(request: PageRequest): unknown {
         disabled(bound.node) ||
         guard(bound.node) !== bound.guard ||
         (bound.option &&
-          (!bound.option.isConnected ||
-            bound.option.disabled ||
-            Boolean(bound.option.closest("optgroup[disabled]")))) ||
-        !hit(bound.node))
+          (!bound.option.isConnected || bound.option.disabled || Boolean(bound.option.closest("optgroup[disabled]")))))
     )
       return { status: "stale", reason: "target-changed-or-covered" };
+    if (request.targetId && bound && !hit(bound.node)) {
+      // A sticky header or a toast can sit over a control that is on screen. Bring it to the middle and look
+      // again: a control still covered then (a modal, say) is not one to click.
+      bound.node.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+      if (!hit(bound.node)) return { status: "stale", reason: "target-changed-or-covered" };
+    }
     if (
-      !["CLICK", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "PRESS_ENTER", "SCROLL_DOWN", "SCROLL_UP", "WAIT"].includes(
-        request.operation,
-      ) ||
+      ![
+        "CLICK",
+        "TYPE_TEXT",
+        "SELECT",
+        "CHECK",
+        "UNCHECK",
+        "PRESS_ENTER",
+        "SCROLL_DOWN",
+        "SCROLL_UP",
+        "SCROLL_LEFT",
+        "SCROLL_RIGHT",
+        "WAIT",
+      ].includes(request.operation) ||
       (["CLICK", "TYPE_TEXT", "SELECT", "CHECK", "UNCHECK", "PRESS_ENTER"].includes(request.operation) && !bound)
     )
       return { status: "stale", reason: "operation-not-observed" };
@@ -390,6 +752,14 @@ export function pageBridge(request: PageRequest): unknown {
           form.requestSubmit();
           break;
         }
+        case "SCROLL_LEFT":
+        case "SCROLL_RIGHT": {
+          const direction = request.operation === "SCROLL_RIGHT" ? 1 : -1;
+          if (node && node !== document.scrollingElement && node !== document.documentElement)
+            node.scrollBy({ left: direction * Math.max(60, node.clientWidth * 0.8), behavior: "instant" });
+          else window.scrollBy(direction * 500, 0);
+          break;
+        }
         case "SCROLL_DOWN":
         case "SCROLL_UP": {
           const direction = request.operation === "SCROLL_DOWN" ? 1 : -1;
@@ -431,12 +801,18 @@ export function pageBridge(request: PageRequest): unknown {
     above: string[];
     belowCount: number;
     aboveCount: number;
+    // It also scrolls sideways: its clipped controls are hidden, and it is offered to scroll left and right.
+    wide: boolean;
   };
   const scrollers = new Map<HTMLElement, Scroller>();
   for (const node of nodes) {
     if (node === document.body || node === document.documentElement || scrollers.size >= 12) continue;
-    if (node.scrollHeight <= node.clientHeight + 4 || node.clientHeight < 40) continue;
-    if (!["auto", "scroll", "overlay"].includes(getComputedStyle(node).overflowY) || !visible(node)) continue;
+    const style = getComputedStyle(node);
+    const scrolls = ["auto", "scroll", "overlay"];
+    const tall =
+      node.scrollHeight > node.clientHeight + 4 && node.clientHeight >= 40 && scrolls.includes(style.overflowY);
+    const wide = node.scrollWidth > node.clientWidth + 4 && node.clientWidth >= 40 && scrolls.includes(style.overflowX);
+    if ((!tall && !wide) || !visible(node)) continue;
     scrollers.set(node, {
       node,
       box: node.getBoundingClientRect(),
@@ -444,10 +820,9 @@ export function pageBridge(request: PageRequest): unknown {
       above: [],
       belowCount: 0,
       aboveCount: 0,
+      wide,
     });
   }
-  const parentOf = (node: Element): HTMLElement | null =>
-    node.parentElement ?? ((node.getRootNode() as ShadowRoot).host as HTMLElement | undefined) ?? null;
   // Where a rectangle sits against the containers around it: null when every one of them shows it.
   const cutBy = (node: Element, rect: DOMRect): { scroller: Scroller; side: "above" | "below" | "side" } | null => {
     if (!scrollers.size) return null;
@@ -459,6 +834,15 @@ export function pageBridge(request: PageRequest): unknown {
       if (rect.right <= scroller.box.left || rect.left >= scroller.box.right) return { scroller, side: "side" };
     }
     return null;
+  };
+  // The step may name its control by selector; the targets that match it say so, and execute re-checks it.
+  const bindsStep = (node: HTMLElement) => {
+    if (request.type !== "observe" || !request.bind) return false;
+    try {
+      return node.matches(request.bind);
+    } catch {
+      return false;
+    }
   };
   const targets: Record<string, Record<string, Candidate>> = {};
   const boundTargets = new Map<string, Bound>();
@@ -480,6 +864,11 @@ export function pageBridge(request: PageRequest): unknown {
     (targets[operation] ??= {})[targetId] = candidate;
     boundTargets.set(`${operation}:${targetId}`, { node, operation, candidate, option, guard: guard(node) });
   };
+  // Every control on screen is collected first; only then are up to 150 chosen, the ones that best match the goal
+  // of the step, so a crowded screen cannot push the control the step needs out of the list.
+  const eligible: Array<{ node: HTMLElement; nodeRole: string; label: string }> = [];
+  // Controls the page has outside the visible area, which the model is told about so it can scroll to them.
+  const outside: Array<{ node: HTMLElement; where: string }> = [];
   for (const node of nodes) {
     if (
       !node.matches('a[href],button,input,textarea,select,summary,[contenteditable="true"],[role]') ||
@@ -507,12 +896,62 @@ export function pageBridge(request: PageRequest): unknown {
       rect.right <= 0 ||
       rect.top >= innerHeight ||
       rect.left >= innerWidth
-    )
+    ) {
+      if (rect.width && rect.height && outside.length < 2000)
+        outside.push({
+          node,
+          where:
+            rect.bottom <= 0 ? "above" : rect.top >= innerHeight ? "below" : rect.right <= 0 ? "left of" : "right of",
+        });
       continue;
+    }
     const nodeRole = role(node);
     if (!nodeRole) continue;
-    const nodeId = id(node),
-      label = name(node) || nodeRole;
+    eligible.push({ node, nodeRole, label: name(node) || nodeRole });
+  }
+  const goalWords = new Set(
+    (request.type === "observe" ? (request.goal ?? "") : "")
+      .normalize("NFKD")
+      .replace(/\p{M}+/gu, "")
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean),
+  );
+  const match = (label: string) => {
+    if (!goalWords.size) return 0;
+    const have = new Set(
+      label
+        .normalize("NFKD")
+        .replace(/\p{M}+/gu, "")
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(Boolean),
+    );
+    let shared = 0;
+    for (const word of have) if (goalWords.has(word)) shared++;
+    return shared / Math.max(1, have.size);
+  };
+  const chosen =
+    eligible.length <= 150
+      ? eligible
+      : eligible
+          .map((item, order) => ({ item, order, score: match(item.label) }))
+          .sort((a, b) => b.score - a.score || a.order - b.order)
+          .slice(0, 150)
+          .sort((a, b) => a.order - b.order)
+          .map(({ item }) => item);
+  const hints = outside
+    .flatMap(({ node, where }, order) => {
+      const kind = role(node);
+      if (!kind) return [];
+      const label = name(node) || kind;
+      return [{ order, score: match(label), text: `${label.slice(0, 80)} (${kind}, ${where} the view)` }];
+    })
+    .sort((a, b) => b.score - a.score || a.order - b.order);
+  const offscreen = hints.slice(0, 60).map((hint) => hint.text);
+  const offscreenMore = Math.max(0, hints.length - offscreen.length);
+  for (const { node, nodeRole, label } of chosen) {
+    const nodeId = id(node);
     const value = publicValue(node),
       state = checked(node);
     const candidate: Candidate = {
@@ -521,6 +960,8 @@ export function pageBridge(request: PageRequest): unknown {
       role: nodeRole,
       currentValue: value,
       ...(state === null ? {} : { checked: state }),
+      ...(bindsStep(node) ? { bound: true } : {}),
+      ...(placeOf(node) ? { context: placeOf(node) } : {}),
     };
     const operations: string[] = [];
     if (node instanceof HTMLSelectElement) {
@@ -568,7 +1009,12 @@ export function pageBridge(request: PageRequest): unknown {
           "menuitemradio",
           "treeitem",
           "gridcell",
-        ].includes(nodeRole)
+        ].includes(nodeRole) &&
+        // A data grid wraps its buttons in cells; the button is the target, the cell would only repeat its label.
+        !(
+          nodeRole === "gridcell" &&
+          node.querySelector('a[href],button,input,select,textarea,summary,[role="button"],[role="link"]')
+        )
       ) {
         add("CLICK", nodeId, node, candidate);
         operations.push("CLICK");
@@ -586,7 +1032,6 @@ export function pageBridge(request: PageRequest): unknown {
       operations,
       ...(state === null ? {} : { checked: state }),
     });
-    if (elements.length >= 150) break;
   }
   const containerLabel = (node: HTMLElement): string => {
     const clean = (value: string | null | undefined) => (value ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -619,11 +1064,34 @@ export function pageBridge(request: PageRequest): unknown {
     const { node, box } = scroller;
     if (box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth || cutBy(node, box))
       continue;
+    if (scroller.wide) {
+      const sideways: Candidate = {
+        ref: id(node),
+        label: containerLabel(node),
+        role: "scrollable",
+        currentValue: `${Math.round((100 * node.scrollLeft) / Math.max(1, node.scrollWidth - node.clientWidth))}% scrolled sideways`,
+      };
+      if (node.scrollLeft + node.clientWidth < node.scrollWidth - 2) add("SCROLL_RIGHT", sideways.ref, node, sideways);
+      if (node.scrollLeft > 0) add("SCROLL_LEFT", sideways.ref, node, sideways);
+    }
     const canDown = node.scrollTop + node.clientHeight < node.scrollHeight - 2;
     const canUp = node.scrollTop > 0;
     if (!canDown && !canUp) continue;
     const nodeId = id(node);
     const progress = Math.round((100 * node.scrollTop) / Math.max(1, node.scrollHeight - node.clientHeight));
+    // Rows that exist against rows the container says it has (aria-rowcount), or against how tall its content is.
+    const rows = Array.from(
+      node.querySelectorAll<HTMLElement>('[role="row"],[role="listitem"],[role="option"],li,tr'),
+    ).slice(0, 400);
+    const declared = Number(
+      node.getAttribute("aria-rowcount") ??
+        node.querySelector("[aria-rowcount]")?.getAttribute("aria-rowcount") ??
+        node.querySelector("[aria-setsize]")?.getAttribute("aria-setsize") ??
+        NaN,
+    );
+    const rowsHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
+    const virtual =
+      rows.length >= 3 && ((Number.isFinite(declared) && declared > rows.length) || rowsHeight * 3 < node.scrollHeight);
     const candidate: Candidate = {
       ref: nodeId,
       label: containerLabel(node),
@@ -635,6 +1103,9 @@ export function pageBridge(request: PageRequest): unknown {
         above: scroller.aboveCount,
         belowLabels: scroller.below,
         aboveLabels: scroller.above,
+        ...(virtual
+          ? { virtual: { rendered: rows.length, ...(Number.isFinite(declared) ? { total: declared } : {}) } }
+          : {}),
       },
     };
     if (canDown) add("SCROLL_DOWN", nodeId, node, candidate);
@@ -678,6 +1149,58 @@ export function pageBridge(request: PageRequest): unknown {
       }
     }
   }
+  // Same-site frames are documents of their own, with their own elements. Each is read by its own copy of this
+  // script (so its nodes are checked and clicked in their own realm) and merged in with the frame's id as a prefix.
+  const frames = new Map<string, { win: Window; snapshotId: string }>();
+  const frameDepth = request.type === "observe" ? (request.depth ?? 0) : 0;
+  if (frameDepth < 3) {
+    for (const frame of nodes) {
+      if (!(frame instanceof HTMLIFrameElement) || !visible(frame)) continue;
+      const box = frame.getBoundingClientRect();
+      if (
+        !box.width ||
+        !box.height ||
+        box.bottom <= 0 ||
+        box.top >= innerHeight ||
+        box.right <= 0 ||
+        box.left >= innerWidth
+      )
+        continue;
+      type Seen = {
+        targets: Record<string, Record<string, Candidate>>;
+        elements: typeof elements;
+        text: string;
+        snapshotId: string;
+      };
+      let seen: Seen;
+      try {
+        const win = frame.contentWindow as (Window & typeof globalThis) | null;
+        if (!win?.document) continue;
+        seen = win.eval(
+          `(${pageBridge.toString()})(${JSON.stringify({
+            type: "observe",
+            dialogs: request.type === "observe" ? request.dialogs : undefined,
+            bind: request.type === "observe" ? request.bind : undefined,
+            depth: frameDepth + 1,
+          })})`,
+        ) as Seen;
+        const prefix = id(frame);
+        frames.set(prefix, { win, snapshotId: seen.snapshotId });
+        for (const [operation, group] of Object.entries(seen.targets))
+          for (const [targetId, candidate] of Object.entries(group))
+            (targets[operation] ??= {})[`${prefix}/${targetId}`] = {
+              ...candidate,
+              ref: `${prefix}/${candidate.ref}`,
+              ...(candidate.ref === "page" ? { label: "Frame page" } : {}),
+            };
+        for (const element of seen.elements)
+          if (elements.length < 150) elements.push({ ...element, index: `${prefix}/${element.index}` });
+        if (seen.text) words.push(seen.text);
+      } catch {
+        // A frame from another site, or one that is gone, stays an opaque box.
+      }
+    }
+  }
   const text = words.join("\n").slice(0, 12_000);
   const tree =
     elements
@@ -689,7 +1212,7 @@ export function pageBridge(request: PageRequest): unknown {
     "\n" +
     text;
   const snapshotId = crypto.randomUUID();
-  registry.snapshots.set(snapshotId, { page: pageKey(), targets: boundTargets });
+  registry.snapshots.set(snapshotId, { page: pageKey(), targets: boundTargets, frames });
   if (registry.snapshots.size > 4) {
     const first = registry.snapshots.keys().next().value;
     if (first) registry.snapshots.delete(first);
@@ -700,6 +1223,8 @@ export function pageBridge(request: PageRequest): unknown {
     "BLOCKED",
     ...(scrollY > 0 ? ["SCROLL_UP"] : []),
     ...(scrollY + innerHeight < document.documentElement.scrollHeight - 2 ? ["SCROLL_DOWN"] : []),
+    ...(scrollX > 0 ? ["SCROLL_LEFT"] : []),
+    ...(scrollX + innerWidth < document.documentElement.scrollWidth - 2 ? ["SCROLL_RIGHT"] : []),
   ];
   return {
     url: location.href,
@@ -709,6 +1234,8 @@ export function pageBridge(request: PageRequest): unknown {
     elements,
     targets,
     controls,
+    offscreen,
+    offscreenMore,
     documentId: registry.documentId,
     snapshotId,
   };

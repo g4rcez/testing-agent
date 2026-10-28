@@ -144,6 +144,8 @@ try {
     throw new Error("Installed test did not pass independent assertions");
   if (
     result.video?.status !== "saved" ||
+    // The tab-following recorder ships in the package; falling back to agent-browser's would hide a missing helper.
+    result.video.engine !== "cdp" ||
     !(Bun.file(result.video.path).size > 0) ||
     !result.passed ||
     !result.steps.every((step: { success: boolean }) => step.success)

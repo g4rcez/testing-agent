@@ -6,6 +6,8 @@ import { Browser, StaleDecisionError, BrowserDeadlineError, BrowserCommandReject
 import { BackendSetupError } from "./backend.ts";
 import { assume, backendConfig, decide, fieldValue } from "./decision.ts";
 import { assumeDeterministic, resolveFast } from "./fastpath.ts";
+import { isOnScreen, searchPlan } from "./search.ts";
+import { followTarget, startRecorder, stopRecorder } from "./recorder.ts";
 import { RunError, observationDebug, type ReasonCode } from "./diagnostics.ts";
 import { normalizeText, urlsEqual } from "./normalize.ts";
 import {
@@ -110,6 +112,16 @@ const debugSchema = z.object({
     .optional(),
   assertionChecks: z.array(z.object({ passed: z.boolean(), index: z.number(), message: z.string() })).optional(),
   tabs: z.object({ count: z.number(), active: z.string(), urls: z.array(z.string()) }).optional(),
+  search: z
+    .object({
+      needle: z.string(),
+      status: z.enum(["found", "end", "more", "budget"]),
+      screens: z.number(),
+      totalScreens: z.number(),
+      container: z.string(),
+      label: z.string().optional(),
+    })
+    .optional(),
 });
 const stateSchema = z.object({
   version: z.literal(2),
@@ -143,6 +155,16 @@ const stateSchema = z.object({
     .object({ active: z.string(), opener: z.string(), latest: z.string().optional(), known: z.array(z.string()) })
     .optional(),
   blockedRetries: z.number().int().min(0).default(0),
+  // The scrolling search of the current step: what it has spent, and how often it brought the control into reach.
+  search: z
+    .object({
+      stepIndex: z.number().int().min(0),
+      screens: z.number().int().min(0),
+      spentMs: z.number().min(0),
+      found: z.number().int().min(0),
+      exhausted: z.boolean(),
+    })
+    .optional(),
   unchangedActions: z.number().int().min(0),
   staleDecisions: z.number().int().min(0),
   video: z
@@ -150,13 +172,18 @@ const stateSchema = z.object({
       path: z.string(),
       status: z.enum(["starting", "recording", "saved", "failed"]),
       error: z.string().optional(),
+      // Which recorder films this run, and for the cdp one, what it filmed: tabs in order, with when each began.
+      engine: z.enum(["cdp", "agent-browser"]).optional(),
+      note: z.string().optional(),
+      frames: z.number().int().optional(),
+      segments: z.array(z.object({ targetId: z.string(), startedAt: z.number() })).optional(),
     })
     .optional(),
   assertions: z.array(z.object({ passed: z.boolean(), index: z.number(), message: z.string() })),
 });
 export type RunState = z.infer<typeof stateSchema>;
 type BrowserPort = Pick<Browser, "command" | "observe" | "execute"> &
-  Partial<Pick<Browser, "receipt" | "assert" | "tabs" | "switchTab">>;
+  Partial<Pick<Browser, "receipt" | "assert" | "tabs" | "switchTab" | "search">>;
 export type RunnerDependencies = {
   browser: (session: string, deadline: number, signal?: AbortSignal, config?: BrowserConfig) => BrowserPort;
   decide: typeof decide;
@@ -269,6 +296,86 @@ async function syncTabs(
     ...(latest ? { latest } : {}),
   };
   remember(state, { tabs: { count: list.length, active, urls: list.map((tab) => tab.url).slice(0, 5) } });
+  await followVideo(state, list.find((tab) => tab.id === active)?.targetId);
+}
+// The recording follows the tab the run is working in, so a pop-up is filmed while it is the one in use.
+async function followVideo(state: RunState, targetId: string | undefined): Promise<void> {
+  if (state.video?.engine !== "cdp" || state.video.status !== "recording" || !targetId) return;
+  await followTarget(state.video.path, targetId).catch(() => undefined);
+}
+// What a step is about, in its own words: the instruction and the text it expects to see.
+const goalOf = (step: RunInput["steps"][number]) => [step.instruction, step.expect?.text].filter(Boolean).join(" ");
+// How many times a search may bring the control into reach without the step then resolving; after that the
+// step goes on to the model with the control on screen.
+const MAX_SEARCH_FINDS = 3;
+// Looks for the control a step names when it is not on screen. "again": the control was brought into reach,
+// observe and decide anew. "stopped": the run ended or paused here. "none": nothing to do, carry on.
+async function searchForStep(
+  browser: BrowserPort,
+  state: RunState,
+  step: RunInput["steps"][number],
+  observed: Observation,
+  callDeadline: number,
+): Promise<"again" | "stopped" | "none"> {
+  const plan = searchPlan(step);
+  if (!plan || !browser.search || isOnScreen(plan, observed)) return "none";
+  // A step that has already acted found its control; if it is gone now the page is moving on, not missing it.
+  if (state.actions.some((action) => action.stepIndex === state.stepIndex && action.source !== "deterministic"))
+    return "none";
+  const progress =
+    state.search?.stepIndex === state.stepIndex
+      ? state.search
+      : { stepIndex: state.stepIndex, screens: 0, spentMs: 0, found: 0, exhausted: false };
+  state.search = progress;
+  if (progress.exhausted || progress.found >= MAX_SEARCH_FINDS) return "none";
+  for (;;) {
+    if (callDeadline - Date.now() < 4000) {
+      stop(state, "paused", "CALL_BUDGET", "Call budget reached during a search; resume to continue");
+      await saveRun(state);
+      return "stopped";
+    }
+    const started = Date.now();
+    const outcome = await browser.search(
+      plan.needle,
+      Math.max(1, state.input.searchScreens - progress.screens),
+      Math.min(6000, Math.max(1000, callDeadline - Date.now() - 4000)),
+      "control",
+      plan.within,
+    );
+    progress.screens += outcome.screens;
+    progress.spentMs += Date.now() - started;
+    remember(state, { search: { needle: plan.needle, ...outcome, totalScreens: progress.screens } });
+    if (outcome.status === "found") {
+      progress.found++;
+      await saveRun(state);
+      return "again";
+    }
+    if (outcome.status === "more" && progress.spentMs < state.input.searchMs) {
+      await saveRun(state);
+      continue;
+    }
+    progress.exhausted = true;
+    if (outcome.status === "end" && plan.exact) {
+      stop(
+        state,
+        "failed",
+        "SEARCH_NOT_FOUND",
+        `"${plan.needle}" is not in the page: searched ${progress.screens} screens of ${outcome.container} to the end`,
+      );
+    } else if (outcome.status !== "end") {
+      stop(
+        state,
+        "blocked",
+        "SEARCH_BUDGET",
+        `"${plan.needle}" was not found within ${progress.screens} screens and ${Math.round(progress.spentMs / 1000)}s of searching`,
+      );
+    } else {
+      await saveRun(state);
+      return "none";
+    }
+    await saveRun(state);
+    return "stopped";
+  }
 }
 async function selectTab(browser: BrowserPort, state: RunState, wanted: string): Promise<void> {
   if (wanted === "current" || !browser.tabs || !browser.switchTab) return;
@@ -293,6 +400,7 @@ async function selectTab(browser: BrowserPort, state: RunState, wanted: string):
     known: list.map((candidate) => candidate.id),
     ...(state.tabs?.latest ? { latest: state.tabs.latest } : {}),
   };
+  await followVideo(state, tab.targetId);
 }
 export async function saveRun(state: RunState): Promise<void> {
   state.updatedAt = Date.now();
@@ -357,15 +465,38 @@ export function assertCompletion(observation: Observation, expected: Assertion |
     (expected.url === undefined || urlsEqual(expected.url, observation.url))
   );
 }
-async function evaluateAssertions(browser: BrowserPort, assertions: Assertion[]): Promise<AssertionResult> {
-  if (browser.assert) return browser.assert(assertions);
-  const observation = await browser.observe();
-  const checks = assertions.map((assertion, index) => ({
-    index,
-    passed: assertCompletion(observation, assertion),
-    message: "Expected frontend state was not observed",
-  }));
-  return { passed: checks.every((check) => check.passed), checks };
+async function evaluateAssertions(
+  browser: BrowserPort,
+  assertions: Assertion[],
+  budget?: Pick<RunInput, "searchScreens" | "searchMs">,
+): Promise<AssertionResult> {
+  const check = async (): Promise<AssertionResult> => {
+    if (browser.assert) return browser.assert(assertions);
+    const observation = await browser.observe();
+    const checks = assertions.map((assertion, index) => ({
+      index,
+      passed: assertCompletion(observation, assertion),
+      message: "Expected frontend state was not observed",
+    }));
+    return { passed: checks.every((item) => item.passed), checks };
+  };
+  const result = await check();
+  if (result.passed || !budget || !browser.search) return result;
+  // A text check that asks for it scrolls the page and the lists in it looking for the text, then looks again.
+  let searched = false;
+  for (const item of result.checks) {
+    const assertion = assertions[item.index];
+    if (item.passed || !assertion?.search || assertion.text === undefined) continue;
+    const started = Date.now();
+    let screens = 0;
+    for (;;) {
+      const outcome = await browser.search(assertion.text, Math.max(1, budget.searchScreens - screens), 6000, "text");
+      screens += outcome.screens;
+      if (outcome.status === "found") searched = true;
+      if (outcome.status !== "more" || Date.now() - started >= budget.searchMs) break;
+    }
+  }
+  return searched ? check() : result;
 }
 export async function startRun(
   input: RunInput,
@@ -460,6 +591,22 @@ function recordAction(state: RunState, pending: NonNullable<RunState["pendingAct
     ...(pending.decision.rule ? { rule: pending.decision.rule } : {}),
   });
 }
+// Starts the recorder that follows tabs. When the browser cannot be filmed this way (a remote provider that has no
+// CDP address, a missing ffmpeg) it says so and the run falls back to agent-browser's own recorder.
+async function startCdpVideo(browser: BrowserPort, state: RunState): Promise<boolean> {
+  if (!state.video || !browser.tabs) return false;
+  try {
+    const { cdpUrl } = z.object({ cdpUrl: z.string() }).parse(await browser.command(["get", "cdp-url"]));
+    const tabs = await browser.tabs();
+    const targetId = (tabs.find((tab) => tab.active) ?? tabs[0])?.targetId;
+    if (!targetId) return false;
+    await startRecorder({ cdpUrl, out: state.video.path, fps: state.input.videoFps, targetId });
+    return true;
+  } catch (error) {
+    state.video.note = `Tab-following recorder unavailable (${error instanceof Error ? error.message : "unknown"}); using agent-browser's recorder`;
+    return false;
+  }
+}
 async function finishVideo(state: RunState, dependencies: RunnerDependencies): Promise<void> {
   if (!state.video || !["starting", "recording"].includes(state.video.status)) return;
   const unconfirmed = state.video.status === "starting";
@@ -467,6 +614,20 @@ async function finishVideo(state: RunState, dependencies: RunnerDependencies): P
     state.video.status = "failed";
     state.video.error =
       "Video startup outcome is unknown in a reused session; inspect it and stop recording manually if needed";
+    return;
+  }
+  if (state.video.engine === "cdp") {
+    try {
+      if (unconfirmed) throw new Error("Video start was never confirmed");
+      const result = await stopRecorder(state.video.path);
+      state.video.status = "saved";
+      state.video.frames = result.frames;
+      state.video.segments = result.segments;
+    } catch (error) {
+      state.video.status = "failed";
+      state.video.error = `Video finalization failed: ${error instanceof Error ? error.message : "unknown error"}`;
+      if (state.status === "completed") stop(state, "failed", "VIDEO_FINALIZE_FAILED", state.video.error);
+    }
     return;
   }
   try {
@@ -543,9 +704,13 @@ async function executeRun(
         await mkdir(directory, { recursive: true, mode: 0o700 });
         state.video = { path: resolve(directory, `${state.runId}.mp4`), status: "starting" };
         await saveRun(state);
+        const filmed = state.input.videoEngine === "cdp" ? await startCdpVideo(browser, state) : false;
+        state.video.engine = filmed ? "cdp" : "agent-browser";
         try {
-          const fps = String(state.input.videoFps);
-          await browser.command(["record", "start", state.video.path, "--fps", fps]);
+          if (!filmed) {
+            const fps = String(state.input.videoFps);
+            await browser.command(["record", "start", state.video.path, "--fps", fps]);
+          }
         } catch (error) {
           if (error instanceof BrowserCommandRejectedError) state.video.status = "failed";
           const rejected = error instanceof BrowserCommandRejectedError;
@@ -601,7 +766,7 @@ async function executeRun(
         if (!step) throw new Error("Missing current step");
         // Choose the tab once, when the step starts: a pop-up may close itself as part of the step.
         if (step.tab && state.stepDecisions === 0) await selectTab(browser, state, step.tab);
-        const observed = await browser.observe();
+        const observed = await browser.observe(step.selector, goalOf(step));
         let controlsFiltered = false;
         const completionAssertions = step.expect
           ? [step.expect]
@@ -634,6 +799,12 @@ async function executeRun(
         const fast = state.input.fastPath
           ? (dependencies.resolve ?? resolveFast)(state.input, state.stepIndex, observed, state.actions)
           : null;
+        // A control that is not on screen is looked for by scrolling before anyone is asked to guess it.
+        if (!fast && state.input.fastPath && browser.search) {
+          const searched = await searchForStep(browser, state, step, observed, callDeadline);
+          if (searched === "again") continue;
+          if (searched === "stopped") break;
+        }
         let decision: Decision;
         let inferenceMs = 0;
         if (fast) decision = fast;
@@ -667,7 +838,7 @@ async function executeRun(
           },
         });
         if (decision.operation === "DONE") {
-          const current = await browser.observe();
+          const current = await browser.observe(step.selector, goalOf(step));
           if (current.fingerprint !== observed.fingerprint) {
             state.staleDecisions++;
             if (state.staleDecisions >= 6)
@@ -675,7 +846,7 @@ async function executeRun(
             continue;
           }
           if (step.expect) {
-            const result = await evaluateAssertions(browser, [step.expect]);
+            const result = await evaluateAssertions(browser, [step.expect], state.input);
             if (!result.passed) {
               stop(
                 state,
@@ -700,6 +871,13 @@ async function executeRun(
           continue;
         }
         if (decision.operation === "BLOCKED") {
+          // The model sees only what is on screen. If the step names a control that is not, search for it
+          // rather than scrolling blind; the blind scrolls below are for steps that name no control.
+          if (browser.search) {
+            const searched = await searchForStep(browser, state, step, observed, callDeadline);
+            if (searched === "again") continue;
+            if (searched === "stopped") break;
+          }
           // Nothing has been tried on this step yet: the answer may be below the fold, so scroll and ask again.
           const untouched = !state.actions.some(
             (action) => action.stepIndex === state.stepIndex && action.source !== "deterministic",
@@ -780,7 +958,7 @@ async function executeRun(
         // instead of asking the model whether the page has caught up.
         if (decision.source === "fast" && step.expect) {
           // Only a shortcut: if the page cannot be read yet, the loop checks the expectation again next time.
-          const result = await evaluateAssertions(browser, [step.expect]).catch((error: unknown) => {
+          const result = await evaluateAssertions(browser, [step.expect], state.input).catch((error: unknown) => {
             if (error instanceof RunError && error.code === "BROWSER_COMMAND_FAILED") return undefined;
             throw error;
           });
@@ -794,7 +972,7 @@ async function executeRun(
             continue;
           }
         }
-        const after = await browser.observe();
+        const after = await browser.observe(step.selector, goalOf(step));
         // A step may state what must be true on the page once its action is done.
         if (step.assume && !step.expect && decision.source !== "deterministic") {
           // A plain "the <field> box contains <value>" is read off the page; the model only judges the rest.
@@ -835,7 +1013,7 @@ async function executeRun(
             ? [state.input.steps.at(-1)?.expect].filter((item): item is Assertion => item !== undefined)
             : []);
         if (!expected.length) throw new Error("No deterministic final assertions were configured");
-        const result = await evaluateAssertions(browser, expected);
+        const result = await evaluateAssertions(browser, expected, state.input);
         state.assertions = result.checks;
         if (result.passed) {
           state.status = "completed";

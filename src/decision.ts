@@ -68,7 +68,19 @@ function scrollHint(scroll: NonNullable<Target["scroll"]>): string {
   const hidden = [side(scroll.below, scroll.belowLabels, "below"), side(scroll.above, scroll.aboveLabels, "above")]
     .filter(Boolean)
     .join("; ");
-  return ` (scrollable, ${scroll.progress}% scrolled${hidden ? `; ${hidden}` : ""})`;
+  const virtual = scroll.virtual
+    ? `; virtual list, only ${scroll.virtual.rendered}${scroll.virtual.total ? ` of ${scroll.virtual.total}` : ""} rows exist now`
+    : "";
+  return ` (scrollable, ${scroll.progress}% scrolled${hidden ? `; ${hidden}` : ""}${virtual})`;
+}
+
+// What is on screen, then what the page has out of view (so a model can tell that scrolling is worth it).
+function pageText(observation: Observation): string {
+  const hints = observation.offscreen?.length
+    ? `\n\nAlso on the page, out of view${observation.offscreenMore ? ` (${observation.offscreenMore} more not listed)` : ""}:\n` +
+      observation.offscreen.map((hint) => `- ${hint}`).join("\n")
+    : "";
+  return (observation.text ?? observation.tree).slice(0, 12_000 - hints.length) + hints;
 }
 
 export function makeRequest(input: RunInput, stepIndex: number, observation: Observation, history: HistoryEntry[]) {
@@ -102,7 +114,11 @@ export function makeRequest(input: RunInput, stepIndex: number, observation: Obs
               ? "Scroll an observed scrollable area, or the page, down to reveal more controls"
               : operation === "SCROLL_UP"
                 ? "Scroll an observed scrollable area, or the page, up to reveal earlier controls"
-                : "Click an observed button, link, checkbox, or other control";
+                : operation === "SCROLL_RIGHT"
+                  ? "Scroll an observed area that scrolls sideways to the right to reveal more controls"
+                  : operation === "SCROLL_LEFT"
+                    ? "Scroll an observed area that scrolls sideways to the left to reveal earlier controls"
+                    : "Click an observed button, link, checkbox, or other control";
     questions[`${operation.toLowerCase()}_target`] = {
       type: "choice",
       instructions: { ...instructions, operation },
@@ -136,11 +152,7 @@ export function makeRequest(input: RunInput, stepIndex: number, observation: Obs
         current_step: step.instruction,
         current_step_number: stepIndex + 1,
       },
-      page: {
-        url: observation.url,
-        title: observation.title ?? "",
-        text: (observation.text ?? observation.tree).slice(0, 12_000),
-      },
+      page: { url: observation.url, title: observation.title ?? "", text: pageText(observation) },
       elements: observation.elements,
       recent_actions: recentActions,
     },

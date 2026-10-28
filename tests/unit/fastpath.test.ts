@@ -43,12 +43,39 @@ test("typing a known value into a named field is resolved without the model", ()
     resolveFast(input, 0, wiki, [{ stepIndex: 0, operation: "TYPE_TEXT", target: "Search Wikipedia", source: "fast" }]),
   ).toBeNull();
   expect(resolveFast(run([{ instruction: "Type IPv4 into the Search Wikipedia box" }]), 0, wiki, [])).toBeNull();
-  // Secrets must be bound to a selector, which keeps those steps on the model path.
+  // A secret is bound to a selector; with no field on the page marked as matching it, the step is left to the model.
   expect(
     resolveFast(
       run([{ instruction: "Fill in the Search Wikipedia field with x", valueFromEnv: "TOKEN", selector: "#q" }]),
       0,
       wiki,
+      [],
+    ),
+  ).toBeNull();
+});
+
+test("a step bound to a selector types into the field the page marked as matching it", () => {
+  const password = target("e7", "Password", "textbox", { currentValue: "", bound: true });
+  const form = page({ TYPE_TEXT: { e6: target("e6", "Username", "textbox", { currentValue: "" }), e7: password } });
+  const input = run([
+    { instruction: "Type the password into the Password field", valueFromEnv: "PASSWORD", selector: "#password" },
+  ]);
+  expect(resolveFast(input, 0, form, [])).toMatchObject({ operation: "TYPE_TEXT", targetId: "e7", rule: "type" });
+  // Typed once, the field shows something (a password field shows <redacted>), and the step is done.
+  const typed = page({ TYPE_TEXT: { e7: { ...password, currentValue: "<redacted>" } } });
+  const history = [{ stepIndex: 0, operation: "TYPE_TEXT", target: "Password", source: "fast" }];
+  expect(resolveFast(input, 0, typed, history)).toMatchObject({ operation: "DONE", rule: "type" });
+  // A field that is still empty after typing goes to the model instead of being typed into again.
+  expect(resolveFast(input, 0, form, history)).toBeNull();
+  // Two fields match the selector: that is a guess, so the model decides.
+  const twins = page({ TYPE_TEXT: { e7: password, e8: { ...password, ref: "e8" } } });
+  expect(resolveFast(input, 0, twins, [])).toBeNull();
+  // The selector is no license to click: only typing is settled here.
+  expect(
+    resolveFast(
+      run([{ instruction: "Click Log in", selector: "#login" }]),
+      0,
+      page({ CLICK: { e4: target("e4", "Log in", "link", { bound: true }) } }),
       [],
     ),
   ).toBeNull();
@@ -232,4 +259,87 @@ test("scrolling names its container, or the page, once containers can scroll", (
   expect(resolveFast(input, 3, screen, [])).toBeNull();
   const containersOnly = page({ SCROLL_DOWN: { s1: container("s1", "Results", items(8, 40)) } });
   expect(resolveFast(input, 1, containersOnly, [])).toBeNull();
+});
+
+// Delete and Edit buttons in three order rows, and two sections that each have a Pay: a link and a button.
+const repeated = page({
+  CLICK: {
+    e1: target("e1", "Edit", "button", { context: "Order #1001 Ada Edit Delete | Orders" }),
+    e2: target("e2", "Delete", "button", { context: "Order #1001 Ada Edit Delete | Orders" }),
+    e3: target("e3", "Edit", "button", { context: "Order #1002 Grace Edit Delete | Orders" }),
+    e4: target("e4", "Delete", "button", { context: "Order #1002 Grace Edit Delete | Orders" }),
+    e5: target("e5", "Pay", "link", { context: "Billing" }),
+    e6: target("e6", "Pay", "button", { context: "Shipping" }),
+  },
+});
+const clicked = (instruction: string) => resolveFast(run([instruction]), 0, repeated, [])?.targetId;
+
+test("controls with the same label are told apart by place, kind and position", () => {
+  expect(clicked("Click Delete in the row of Order #1002")).toBe("e4");
+  expect(clicked("Click the Edit button in the row for Order #1001")).toBe("e1");
+  expect(clicked("Click Pay in the Shipping section")).toBe("e6");
+  expect(clicked("Click the Pay link")).toBe("e5");
+  expect(clicked("Click the Pay button")).toBe("e6");
+  expect(clicked("Click the second Edit button")).toBe("e3");
+  expect(clicked("Click the first Delete")).toBe("e2");
+  expect(clicked("Click the last Edit")).toBe("e3");
+  expect(clicked("Click the 2nd Delete button")).toBe("e4");
+  expect(clicked("Click the second Delete in the row of Order #1001")).toBeUndefined();
+});
+
+test("a place, kind or position that does not narrow to one control is never guessed", () => {
+  // Several left, or none: the model decides.
+  expect(clicked("Click Delete")).toBeUndefined();
+  expect(clicked("Click Pay")).toBeUndefined();
+  expect(clicked("Click Delete in the row of Order #9999")).toBeUndefined();
+  expect(clicked("Click Delete in the row of Order")).toBeUndefined();
+  expect(clicked("Click the Edit link")).toBeUndefined();
+  expect(clicked("Click the third Delete")).toBeUndefined();
+  expect(clicked("Click Delete in the Billing section")).toBeUndefined();
+});
+
+test("words that look like a place are part of the label when the label has them", () => {
+  const labels = page({
+    CLICK: {
+      e1: target("e1", "Sign in with Google", "button"),
+      e2: target("e2", "Log in", "link"),
+      e3: target("e3", "Save", "button"),
+    },
+  });
+  const click = (instruction: string) => resolveFast(run([instruction]), 0, labels, [])?.targetId;
+  expect(click("Click Sign in with Google")).toBe("e1");
+  expect(click("Click Log in link")).toBe("e2");
+  expect(click("Click the Save button from the toolbar")).toBe("e3");
+});
+
+test("every kind of control can be named, and the one the page puts somewhere else is not chosen", () => {
+  const mixed = page({
+    CLICK: {
+      e1: target("e1", "Alerts", "tab"),
+      e2: target("e2", "Alerts", "menuitem"),
+      e3: target("e3", "Alerts", "checkbox"),
+      e4: target("e4", "Alerts", "radio"),
+      e5: target("e5", "Alerts", "switch"),
+      e6: target("e6", "Alerts", "button"),
+      e7: target("e7", "Save", "button", { context: "Settings" }),
+    },
+  });
+  const click = (instruction: string) => resolveFast(run([instruction]), 0, mixed, [])?.targetId;
+  expect(click("Click the Alerts tab")).toBe("e1");
+  expect(click("Click the Alerts menu item")).toBe("e2");
+  expect(click("Click the Alerts checkbox")).toBe("e3");
+  expect(click("Click the Alerts radio")).toBe("e4");
+  expect(click("Click the Alerts switch")).toBe("e5");
+  expect(click("Click the Alerts button")).toBe("e6");
+  // The only Save is in Settings, and the step says Billing: it is not the one meant.
+  expect(click("Click Save in the Billing section")).toBeUndefined();
+  expect(click("Click Save in the Settings section")).toBe("e7");
+  // A clause that is not a place is dropped to find the label.
+  expect(click("Click Save at the top")).toBe("e7");
+  expect(click("Click Save on the left")).toBe("e7");
+});
+
+test("a row can be named by its number alone", () => {
+  expect(clicked("Click Delete in row 1002")).toBe("e4");
+  expect(clicked("Click Edit in rows with Order #1001")).toBe("e1");
 });

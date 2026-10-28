@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Columns (horizontal virtual list)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 14px system-ui;
+  }
+  #strip {
+    width: 600px;
+    height: 80px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    position: relative;
+    border: 1px solid #888;
+  }
+  #spacer {
+    position: relative;
+    height: 60px;
+  }
+  .cell {
+    position: absolute;
+    top: 0;
+    width: 120px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border-right: 1px solid #eee;
+  }
+</style>
+<h1>Columns</h1>
+<p>1,000 columns. Only the ones near the view are in the page.</p>
+<div id="strip" role="list" aria-label="Columns"><div id="spacer"></div></div>
+<p id="out" role="status">No column opened</p>
+<script>
+  const TOTAL = 1000,
+    CELL = 120,
+    POOL = 14;
+  const strip = document.getElementById("strip");
+  const spacer = document.getElementById("spacer");
+  spacer.style.width = TOTAL * CELL + "px";
+  const label = (n) => "#" + String(n).padStart(4, "0");
+  const pool = Array.from({ length: POOL }, () => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.setAttribute("role", "listitem");
+    const button = document.createElement("button");
+    cell.append(button);
+    spacer.append(cell);
+    return { cell, button };
+  });
+  function render() {
+    const first = Math.min(TOTAL - POOL, Math.max(0, Math.floor(strip.scrollLeft / CELL) - 2));
+    pool.forEach(({ cell, button }, offset) => {
+      const index = first + offset;
+      cell.style.transform = "translateX(" + index * CELL + "px)";
+      button.textContent = "Open column " + label(index + 1);
+      button.onclick = () => {
+        document.getElementById("out").textContent = "Opened column " + label(index + 1);
+      };
+    });
+  }
+  strip.addEventListener("scroll", render);
+  render();
+</script>

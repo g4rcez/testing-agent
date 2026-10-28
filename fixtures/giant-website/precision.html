@@ -1,0 +1,59 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Orders and settings (repeated controls)</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 14px system-ui;
+  }
+  td,
+  th {
+    padding: 4px 12px;
+    text-align: left;
+  }
+  section {
+    margin: 12px 0;
+  }
+</style>
+<h1>Orders</h1>
+<table aria-label="Orders">
+  <tr>
+    <td>Order #1001</td>
+    <td>Ada</td>
+    <td>
+      <button onclick="out('Edited order #1001')">Edit</button>
+      <button onclick="out('Deleted order #1001')">Delete</button>
+    </td>
+  </tr>
+  <tr>
+    <td>Order #1002</td>
+    <td>Grace</td>
+    <td>
+      <button onclick="out('Edited order #1002')">Edit</button>
+      <button onclick="out('Deleted order #1002')">Delete</button>
+    </td>
+  </tr>
+  <tr>
+    <td>Order #1003</td>
+    <td>Linus</td>
+    <td>
+      <button onclick="out('Edited order #1003')">Edit</button>
+      <button onclick="out('Deleted order #1003')">Delete</button>
+    </td>
+  </tr>
+</table>
+<section aria-labelledby="billing">
+  <h2 id="billing">Billing</h2>
+  <button onclick="out('Edited billing')">Edit</button>
+  <a href="#pay" onclick="out('Paid billing (link)')">Pay</a>
+</section>
+<section>
+  <h2>Shipping</h2>
+  <button onclick="out('Edited shipping')">Edit</button>
+  <button onclick="out('Paid shipping (button)')">Pay</button>
+</section>
+<p id="result" role="status">Nothing done</p>
+<script>
+  const out = (text) => (document.getElementById("result").textContent = text);
+</script>

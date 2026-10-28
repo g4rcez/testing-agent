@@ -7,3 +7,4 @@ dist/
 *.tgz
 __pycache__/
 .omo
+.stryker-tmp/

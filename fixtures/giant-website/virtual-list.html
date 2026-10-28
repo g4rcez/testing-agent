@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Orders (virtual list)</title>
+<style>
+  body {
+    margin: 0;
+    font: 14px system-ui;
+  }
+  h1 {
+    margin: 8px 12px;
+    font-size: 18px;
+  }
+  #viewport {
+    height: 400px;
+    overflow-y: auto;
+    position: relative;
+    border: 1px solid #888;
+    margin: 0 12px;
+  }
+  #spacer {
+    position: relative;
+  }
+  .row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee;
+  }
+  #out {
+    margin: 8px 12px;
+    font-weight: 600;
+  }
+</style>
+<h1>Orders</h1>
+<p style="margin: 0 12px">10,000 orders. Only the rows near the viewport exist in the DOM.</p>
+<div id="viewport" role="grid" aria-label="Orders" aria-rowcount="10000">
+  <div id="spacer" role="rowgroup"></div>
+</div>
+<p id="out" role="status">No order opened</p>
+<script>
+  const TOTAL = 10000,
+    ROW = 40,
+    POOL = 30;
+  const viewport = document.getElementById("viewport");
+  const spacer = document.getElementById("spacer");
+  spacer.style.height = TOTAL * ROW + "px";
+  const label = (n) => "#" + String(n).padStart(5, "0");
+  const pool = Array.from({ length: POOL }, () => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.setAttribute("role", "row");
+    const cell = document.createElement("span");
+    cell.setAttribute("role", "gridcell");
+    cell.style.flex = "1";
+    const button = document.createElement("button");
+    cell.append(button);
+    row.append(cell);
+    spacer.append(row);
+    return { row, button };
+  });
+  // Rows are recycled: every scroll rewrites the same 30 nodes for other order numbers.
+  function render() {
+    const first = Math.min(TOTAL - POOL, Math.max(0, Math.floor(viewport.scrollTop / ROW) - 5));
+    pool.forEach(({ row, button }, offset) => {
+      const index = first + offset;
+      row.style.transform = "translateY(" + index * ROW + "px)";
+      row.setAttribute("aria-rowindex", String(index + 1));
+      const text = "Open order " + label(index + 1);
+      button.textContent = text;
+      button.onclick = () => {
+        document.getElementById("out").textContent = "Opened order " + label(index + 1);
+      };
+    });
+  }
+  viewport.addEventListener("scroll", render);
+  render();
+</script>

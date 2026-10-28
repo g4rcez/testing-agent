@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Decision, Observation } from "./contracts.ts";
 import { RunError } from "./diagnostics.ts";
-import { pageExpression, type PageRequest } from "./page.ts";
+import { pageExpression, type PageRequest, type SearchOutcome } from "./page.ts";
 import { assertionExpression, assertionResultSchema, type AssertionResult } from "./assertions.ts";
 import type { Assertion, BrowserConfig } from "./contracts.ts";
 
@@ -12,6 +12,8 @@ const candidateSchema = z.object({
   value: z.string().optional(),
   currentValue: z.string().optional(),
   checked: z.string().optional(),
+  bound: z.boolean().optional(),
+  context: z.string().optional(),
   scroll: z
     .object({
       progress: z.number(),
@@ -19,6 +21,7 @@ const candidateSchema = z.object({
       above: z.number(),
       belowLabels: z.array(z.string()),
       aboveLabels: z.array(z.string()),
+      virtual: z.object({ rendered: z.number(), total: z.number().optional() }).optional(),
     })
     .optional(),
 });
@@ -39,9 +42,17 @@ const observationSchema = z.object({
   ),
   targets: z.record(z.string(), z.record(z.string(), candidateSchema)),
   controls: z.array(z.string()),
+  offscreen: z.array(z.string()).optional(),
+  offscreenMore: z.number().optional(),
   documentId: z.uuid(),
   snapshotId: z.uuid(),
 });
+const searchOutcomeSchema = z.object({
+  status: z.enum(["found", "end", "more", "budget"]),
+  screens: z.number().int().min(0),
+  container: z.string(),
+  label: z.string().optional(),
+}) satisfies z.ZodType<SearchOutcome>;
 const responseSchema = z.object({ success: z.boolean(), data: z.unknown(), error: z.string().nullable().optional() });
 const dialogSchema = z.object({ type: z.string(), message: z.string() });
 export type Dialog = z.infer<typeof dialogSchema>;
@@ -59,6 +70,7 @@ const tabsSchema = z.object({
   tabs: z.array(
     z.object({
       tabId: z.string(),
+      targetId: z.string().optional(),
       active: z.boolean(),
       url: z.string(),
       title: z.string(),
@@ -66,7 +78,14 @@ const tabsSchema = z.object({
     }),
   ),
 });
-export type Tab = { id: string; active: boolean; url: string; title: string; label: string | null };
+export type Tab = {
+  id: string;
+  targetId?: string | undefined;
+  active: boolean;
+  url: string;
+  title: string;
+  label: string | null;
+};
 export class StaleDecisionError extends Error {}
 export class BrowserDeadlineError extends Error {}
 export class BrowserCommandRejectedError extends Error {}
@@ -127,10 +146,10 @@ export class Browser {
   }
 
   // A page that is still navigating can fail the first read; retry briefly.
-  private async observeWithRetry(): Promise<unknown> {
+  private async observeWithRetry(bind?: string, goal?: string): Promise<unknown> {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.evaluate({ type: "observe", dialogs: this.config?.dialogs });
+        return await this.evaluate({ type: "observe", dialogs: this.config?.dialogs, bind, goal });
       } catch (error) {
         if (
           attempt >= 3 ||
@@ -144,8 +163,8 @@ export class Browser {
     }
   }
 
-  async observe(): Promise<Observation> {
-    const result = observationSchema.parse(await this.observeWithRetry());
+  async observe(bind?: string, goal?: string): Promise<Observation> {
+    const result = observationSchema.parse(await this.observeWithRetry(bind, goal));
     const { snapshotId: _snapshotId, ...semantic } = result;
     return { ...result, fingerprint: new Bun.CryptoHasher("sha256").update(JSON.stringify(semantic)).digest("hex") };
   }
@@ -178,11 +197,25 @@ export class Browser {
       : undefined;
   }
 
+  /** One slice of a scrolling search for a control; "more" means call again, the page may still hold it. */
+  async search(
+    needle: string,
+    maxScreens: number,
+    sliceMs = 6000,
+    mode: "control" | "text" = "control",
+    within?: string,
+  ): Promise<SearchOutcome> {
+    return searchOutcomeSchema.parse(
+      await this.evaluate({ type: "search", dialogs: this.config?.dialogs, needle, sliceMs, maxScreens, mode, within }),
+    );
+  }
+
   /** Every open tab of the session; the active one is where observations and assertions run. */
   async tabs(): Promise<Tab[]> {
     const { tabs } = tabsSchema.parse(await this.command(["tab", "list"]));
     return tabs.map((tab) => ({
       id: tab.tabId,
+      targetId: tab.targetId,
       active: tab.active,
       url: tab.url,
       title: tab.title,
