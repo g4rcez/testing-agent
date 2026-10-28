@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Reports (SPA)</title>
+<style>
+  body {
+    margin: 0;
+    font: 14px system-ui;
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: 72px;
+    box-sizing: border-box;
+    padding: 24px 16px;
+    background: #123;
+    color: #fff;
+    font-weight: 600;
+  }
+  main {
+    padding: 0 16px;
+  }
+  li {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    list-style: none;
+    border-bottom: 1px solid #eee;
+  }
+  .skeleton {
+    height: 40px;
+    margin: 12px 0;
+    background: #eee;
+  }
+  #toast {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    padding: 10px 14px;
+    background: #222;
+    color: #fff;
+  }
+</style>
+<header>Acme Reports</header>
+<main id="view" aria-busy="true"></main>
+<div id="toast" role="status">Draft saved</div>
+<script>
+  // A small history router: each route shows a skeleton for a moment, then its content, as a single-page app does
+  // while it loads data. Going back puts the page where the clicked row was, near the top - under the header.
+  const view = document.getElementById("view");
+  // How long a route shows its skeleton: ?delay=2500 slows the first route, ?after=3000 the ones after a click.
+  const params = new URLSearchParams(location.search);
+  let delay = Number(params.get("delay") ?? 600);
+  const AFTER = Number(params.get("after") ?? 600);
+  let clickedTop = 0;
+  function render() {
+    view.setAttribute("aria-busy", "true");
+    view.innerHTML = '<div class="skeleton"></div>'.repeat(5);
+    const report = new URLSearchParams(location.search).get("report");
+    setTimeout(() => {
+      if (report) {
+        view.innerHTML = `<h1>Report ${report} details</h1><p><a href="spa.html" id="back">Back to reports</a></p>`;
+        scrollTo(0, 0);
+      } else {
+        view.innerHTML =
+          "<h1>Reports</h1><ul style='margin:0;padding:0'>" +
+          Array.from({ length: 30 }, (_, i) => `<li><a href="spa.html?report=${i + 1}">Report ${i + 1}</a></li>`).join(
+            "",
+          ) +
+          "</ul>";
+        scrollTo(0, Math.max(0, clickedTop - 20));
+      }
+      view.setAttribute("aria-busy", "false");
+    }, delay);
+    delay = AFTER;
+  }
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href]");
+    if (!link) return;
+    event.preventDefault();
+    if (link.textContent.startsWith("Report ")) clickedTop = link.getBoundingClientRect().top + scrollY;
+    history.pushState({}, "", link.getAttribute("href"));
+    render();
+  });
+  addEventListener("popstate", render);
+  render();
+</script>

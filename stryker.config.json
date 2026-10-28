@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun test tests/unit/search.test.ts tests/unit/recorder.test.ts tests/unit/fastpath.test.ts"
+  },
+  "mutate": ["src/search.ts", "src/recorder.ts:8-27", "src/fastpath.ts:113-221"],
+  "reporters": ["clear-text"],
+  "coverageAnalysis": "off",
+  "concurrency": 4,
+  "timeoutMS": 20000,
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    "tsconfig.json",
+    ".agent-browser-jev",
+    "dist",
+    "docs",
+    "artifacts",
+    "fixtures",
+    "tests/browser",
+    "scripts",
+    "examples",
+    ".stryker-tmp"
+  ]
+}

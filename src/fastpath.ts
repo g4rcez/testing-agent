@@ -34,28 +34,31 @@ export function matchTargets(phrase: string, targets: Record<string, Target> | u
   return lookup(phrase, targets).match;
 }
 
-// Like matchTargets, but says whether nothing matched or several did.
-function lookup(
-  phrase: string,
-  targets: Record<string, Target> | undefined,
-): { match: Match | null; ambiguous: boolean } {
+// The controls a phrase names: those with exactly that label, else those whose label has every word of it.
+function candidatesFor(phrase: string, targets: Record<string, Target> | undefined): Match[] {
   const wanted = normalizeText(phrase);
-  if (!wanted || !targets) return { match: null, ambiguous: false };
+  if (!wanted || !targets) return [];
   const items = Object.entries(targets).flatMap(([id, target]) => {
     const label = normalizeText(target.label);
     // A label that is only the role ("textbox") says nothing about what the control is.
     return label && label !== normalizeText(target.role ?? "") ? [{ id, target, label }] : [];
   });
   const exact = items.filter((item) => item.label === wanted);
-  if (exact.length)
-    return exact.length === 1 ? { match: exact[0]!, ambiguous: false } : { match: null, ambiguous: true };
+  if (exact.length) return exact;
   const wantedWords = words(wanted);
-  const contained = items.filter((item) => {
+  return items.filter((item) => {
     const have = new Set(words(item.label));
     return wantedWords.every((word) => have.has(word));
   });
-  if (contained.length === 1) return { match: contained[0]!, ambiguous: false };
-  return { match: null, ambiguous: contained.length > 1 };
+}
+
+// Like matchTargets, but says whether nothing matched or several did.
+function lookup(
+  phrase: string,
+  targets: Record<string, Target> | undefined,
+): { match: Match | null; ambiguous: boolean } {
+  const found = candidatesFor(phrase, targets);
+  return found.length === 1 ? { match: found[0]!, ambiguous: false } : { match: null, ambiguous: found.length > 1 };
 }
 
 // "Field → Option" labels of dropdown choices.
@@ -107,6 +110,118 @@ function reveal(
   return null;
 }
 
+const CLICK_PATTERN = /^(?:click|tap|open|follow|press|submit|go to|navigate to)\b(?:\s+on)?(?:\s+the)?\s+(.+)$/;
+const ORDINALS: Record<string, number> = {
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
+  last: -1,
+};
+// The word for a kind of control, and the role the page reports for it.
+const KINDS: Record<string, string> = {
+  button: "button",
+  link: "link",
+  tab: "tab",
+  "menu item": "menuitem",
+  checkbox: "checkbox",
+  radio: "radio",
+  switch: "switch",
+};
+const KIND_WORD = new RegExp(`^(.+?)\\s+(${Object.keys(KINDS).join("|")})$`);
+const WHERE = /\s+(?:in|inside|within|from|under|near)\s+/g;
+const CONTAINER_WORD = /\b(?:section|list|dialog|table|panel|card|form|area|modal|region|group|row|page)$/;
+
+/**
+ * What a click step names. `label` is the control's own words. What narrows it down is optional: its `kind`
+ * ("the Pay button"), its place among the same ones ("the second Delete", "the last Edit": `ordinal`, -1 for the
+ * last) and where it is ("in the row of Order #1002", "in the Billing section": `within`).
+ */
+export type ClickAim = { label: string; kind?: string; ordinal?: number; within?: string };
+export function parseClick(named: string): ClickAim {
+  const takeKind = (text: string) => {
+    const kind = text.match(KIND_WORD);
+    return kind ? { rest: kind[1]!, kind: KINDS[kind[2]!] } : { rest: text, kind: undefined };
+  };
+  let { rest, kind } = takeKind(named);
+  let within: string | undefined;
+  // "in the ...", "from the ... list", "in row 3": a place, not part of the label ("sign in with Google" is a label).
+  for (const found of rest.matchAll(WHERE)) {
+    const tail = rest.slice(found.index + found[0].length);
+    if (!/^(?:the|rows?)\b/.test(tail) && !CONTAINER_WORD.test(tail)) continue;
+    within =
+      tail
+        .replace(/^the\s+/, "")
+        .replace(/^rows?\s+(?:(?:of|for|with|containing)\s+)?/, "")
+        .replace(CONTAINER_WORD, "")
+        .trim() || undefined;
+    rest = rest.slice(0, found.index);
+    if (kind === undefined) ({ rest, kind } = takeKind(rest));
+    break;
+  }
+  let ordinal: number | undefined;
+  const nth = rest.match(
+    /^(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(.+)$/,
+  );
+  if (nth) {
+    ordinal = ORDINALS[nth[1]!] ?? Number.parseInt(nth[1]!, 10);
+    rest = nth[2]!;
+  }
+  return {
+    label: rest,
+    ...(kind ? { kind } : {}),
+    ...(ordinal === undefined ? {} : { ordinal }),
+    ...(within ? { within } : {}),
+  };
+}
+
+/** The aim of a click step, or null when the step is not a plain click. */
+export function clickAim(instruction: string): ClickAim | null {
+  const text = normalizeText(instruction);
+  if (CAUTION.test(text)) return null;
+  const named = text.match(CLICK_PATTERN)?.[1];
+  return named ? parseClick(named) : null;
+}
+
+// The phrase as written and without a trailing role word ("log in link" can be a label); then the shorter ones,
+// without a trailing "from/near/in ..." clause, which say less about where the control is.
+function clickPhrases(named: string): { written: string[]; shorter: string[] } {
+  const withoutRole = (phrase: string) => phrase.replace(/\s+(?:button|link|tab|menu item|menu|icon)$/, "");
+  const withoutClause = (phrase: string) =>
+    phrase.replace(/\s+(?:from|near|in|on|to|at|under|inside|within)\s+.+$/, "");
+  const stripped = withoutRole(named);
+  return {
+    written: [...new Set([named, stripped])],
+    // Last, with both gone: "the Delete link from the Orders list" names a control called "Delete".
+    shorter: [...new Set([withoutClause(stripped), withoutRole(withoutClause(stripped))])],
+  };
+}
+
+// The one control an aim names among those on screen: narrowed by kind, by place (what the control sits in), and
+// by its position among the rest. More than one left, or none, is not a guess to make.
+function pick(aim: ClickAim, targets: Record<string, Target> | undefined): Match | null {
+  let found = candidatesFor(aim.label, targets);
+  if (aim.kind) found = found.filter((item) => item.target.role === aim.kind);
+  if (aim.within) {
+    const wanted = words(aim.within);
+    const inPlace = found.filter((item) => {
+      const have = new Set(words(item.target.context ?? ""));
+      return wanted.every((word) => have.has(word));
+    });
+    // The ones the page puts in that place win. With none, only a control the page says nothing about stays: one
+    // that has a context which is not the place asked for is somewhere else.
+    found = inPlace.length ? inPlace : found.filter((item) => !item.target.context);
+  }
+  if (aim.ordinal !== undefined) return found[aim.ordinal < 0 ? found.length + aim.ordinal : aim.ordinal - 1] ?? null;
+  return found.length === 1 ? found[0]! : null;
+}
+
 function fieldPhrase(text: string): string | undefined {
   const pattern = new RegExp(`.*\\b(?:into|in|on|inside)\\s+(?:the\\s+)?(.+?)(?:\\s+${FIELD_WORD})?(?:\\s+to\\s+.*)?$`);
   return text.match(pattern)?.[1];
@@ -119,9 +234,12 @@ export function resolveFast(
   history: ActionRecord[],
 ): FastDecision | null {
   const step = input.steps[stepIndex];
-  // A selector binds the step to one element the page script has to verify; leave that to the model path.
-  if (!step || step.selector !== undefined) return null;
+  if (!step) return null;
   const instruction = normalizeText(step.instruction);
+  // A selector binds the step to one element the page script verifies. Typing into it is settled here, through
+  // the target the page marked as matching the selector; any other kind of step with a selector goes to the model.
+  const typing = /^(?:type|enter|fill(?: in)?|input|write|put)\b/.test(instruction);
+  if (step.selector !== undefined && !typing) return null;
   if (CAUTION.test(instruction)) return null;
   const mine = history.filter((action) => action.stepIndex === stepIndex);
   const revealed = (actions: ActionRecord[]) => actions.filter((action) => action.rule === "reveal").length;
@@ -139,9 +257,11 @@ export function resolveFast(
   });
   const done = (rule: FastRule): FastDecision => ({ ...base, ...snapshot, rule, operation: "DONE", target: undefined });
 
-  const scroll = instruction.match(/^scroll\s+(down|up)\b\s*(.*)$/);
+  const scroll = instruction.match(/^scroll\s+(down|up|left|right)\b\s*(.*)$/);
   if (scroll) {
-    const operation = scroll[1] === "down" ? "SCROLL_DOWN" : "SCROLL_UP";
+    const operation = { down: "SCROLL_DOWN", up: "SCROLL_UP", left: "SCROLL_LEFT", right: "SCROLL_RIGHT" }[
+      scroll[1] as "down" | "up" | "left" | "right"
+    ];
     if (triedFast(operation)) return done("scroll");
     const options = observation.targets[operation];
     if (options && Object.keys(options).length) {
@@ -171,13 +291,26 @@ export function resolveFast(
     const label =
       stripped.match(new RegExp(`^fill(?: in)?\\s+(?:the\\s+)?(.+?)(?:\\s+${FIELD_WORD})?\\s+with\\b`))?.[1] ??
       fieldPhrase(stripped);
-    const found = label ? lookup(label, observation.targets.TYPE_TEXT) : { match: null, ambiguous: false };
+    let found: { match: Match | null; ambiguous: boolean };
+    if (step.selector !== undefined) {
+      const bound = Object.entries(observation.targets.TYPE_TEXT ?? {}).filter(([, target]) => target.bound);
+      found =
+        bound.length === 1
+          ? { match: { id: bound[0]![0], target: bound[0]![1] }, ambiguous: false }
+          : { match: null, ambiguous: bound.length > 1 };
+    } else found = label ? lookup(label, observation.targets.TYPE_TEXT) : { match: null, ambiguous: false };
     const match = found.match;
     if (!match) {
-      const hidden = label && !found.ambiguous && revealed(mine) < MAX_REVEALS ? reveal([label], observation) : null;
+      const hidden =
+        step.selector === undefined && label && !found.ambiguous && revealed(mine) < MAX_REVEALS
+          ? reveal([label], observation)
+          : null;
       return hidden ? act("reveal", hidden.operation, hidden.match) : null;
     }
     if (value !== undefined && normalizeText(match.target.currentValue ?? "") === value) return done("type");
+    // A value read from the environment is not known here, and a password field never shows it: once the field
+    // has been typed into and is not empty, the step is done.
+    if (value === undefined && triedFast("TYPE_TEXT") && (match.target.currentValue ?? "") !== "") return done("type");
     return triedFast("TYPE_TEXT") ? null : act("type", "TYPE_TEXT", match);
   }
 
@@ -231,25 +364,38 @@ export function resolveFast(
     return triedFast("CLICK") ? null : act("toggle", "CLICK", match);
   }
 
-  const click = instruction.match(
-    /^(?:click|tap|open|follow|press|submit|go to|navigate to)\b(?:\s+on)?(?:\s+the)?\s+(.+)$/,
-  );
+  const click = instruction.match(CLICK_PATTERN);
   if (click) {
     if (triedFast("CLICK")) return null;
     const targets = observation.targets.CLICK;
     const named = click[1]!;
-    // The whole phrase first ("open link in new tab" can be a label), then without a trailing role word
-    // ("log in link"), then without a trailing "from/near/in ..." clause. An ambiguous phrase stops the search.
-    const stripped = named.replace(/\s+(?:button|link|tab|menu item|menu|icon)$/, "");
-    const clause = (phrase: string) => phrase.replace(/\s+(?:from|near|in|on|to|at|under|inside|within)\s+.+$/, "");
-    for (const phrase of new Set([named, stripped, clause(stripped)])) {
+    const { written, shorter } = clickPhrases(named);
+    const aim = parseClick(named);
+    // The words as written first ("open link in new tab" can be a label).
+    let ambiguous = false;
+    for (const phrase of written) {
+      const found = lookup(phrase, targets);
+      if (found.match) return act("click", "CLICK", found.match);
+      ambiguous ||= found.ambiguous;
+    }
+    // Several controls share the label, or the step says which one: kind, place and position decide. What does
+    // not narrow down to one control is left alone (to a search, to the model), never guessed.
+    if (ambiguous || aim.kind !== undefined || aim.within !== undefined || aim.ordinal !== undefined) {
+      const picked = pick(aim, targets);
+      if (picked) return act("click", "CLICK", picked);
+      if (ambiguous || aim.within !== undefined) return revealed(mine) < MAX_REVEALS ? hiddenControl() : null;
+    }
+    for (const phrase of shorter) {
       const found = lookup(phrase, targets);
       if (found.match) return act("click", "CLICK", found.match);
       if (found.ambiguous) return null;
     }
+    return hiddenControl();
     // Not on screen: if exactly one scrollable container hides it, scroll that one.
-    const hidden = revealed(mine) < MAX_REVEALS ? reveal([named, stripped, clause(stripped)], observation) : null;
-    return hidden ? act("reveal", hidden.operation, hidden.match) : null;
+    function hiddenControl() {
+      const hidden = revealed(mine) < MAX_REVEALS ? reveal([...written, ...shorter], observation) : null;
+      return hidden ? act("reveal", hidden.operation, hidden.match) : null;
+    }
   }
   return null;
 }

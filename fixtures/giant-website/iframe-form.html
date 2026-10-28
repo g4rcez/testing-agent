@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Signup form</title>
+<body style="margin: 0; padding: 12px; font: 14px system-ui">
+  <h2>Join the list</h2>
+  <form id="form">
+    <p>
+      <label>Email <input id="email" name="email" type="email" /></label>
+    </p>
+    <button type="submit">Subscribe</button>
+  </form>
+  <script>
+    document.getElementById("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      parent.postMessage("subscribed:" + document.getElementById("email").value, "*");
+    });
+  </script>
+</body>

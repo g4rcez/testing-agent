@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Billing</title>
+<style>
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 14px system-ui;
+  }
+</style>
+<h1>Billing</h1>
+<p>Pick the invoice to attach to this order. The invoices open in a separate window.</p>
+<button onclick="window.open('/popup-app.html', 'invoices', 'width=900,height=700')">Choose invoice</button>
+<p id="picked" role="status">No invoice selected</p>
+<script>
+  addEventListener("message", (event) => {
+    if (typeof event.data === "string" && event.data.startsWith("invoice:"))
+      document.getElementById("picked").textContent = "Invoice " + event.data.slice(8) + " selected";
+  });
+</script>

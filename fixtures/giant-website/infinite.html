@@ -1,0 +1,90 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Feed (infinite scroll)</title>
+<style>
+  body {
+    margin: 0;
+    font: 14px system-ui;
+  }
+  h1 {
+    margin: 8px 12px;
+    font-size: 18px;
+  }
+  #feed {
+    height: 400px;
+    overflow-y: auto;
+    border: 1px solid #888;
+    margin: 0 12px;
+    padding: 0;
+    list-style: none;
+  }
+  #feed li {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    border-bottom: 1px solid #eee;
+  }
+  #sentinel {
+    height: 40px;
+    text-align: center;
+    color: #666;
+  }
+  #out {
+    margin: 8px 12px;
+    font-weight: 600;
+  }
+</style>
+<h1>Feed</h1>
+<ul id="feed" aria-label="Feed" aria-busy="false"></ul>
+<p id="out" role="status">No post opened</p>
+<script>
+  // 15 pages of 20 posts; each page arrives after a simulated network delay.
+  const PAGES = 15,
+    PER_PAGE = 20,
+    DELAY = 400;
+  const feed = document.getElementById("feed");
+  const sentinel = document.createElement("div");
+  sentinel.id = "sentinel";
+  let page = 0,
+    loading = false;
+  function load() {
+    if (loading || page >= PAGES) return;
+    loading = true;
+    feed.setAttribute("aria-busy", "true");
+    sentinel.textContent = "Loading...";
+    setTimeout(() => {
+      sentinel.remove();
+      for (let i = 1; i <= PER_PAGE; i++) {
+        const n = page * PER_PAGE + i;
+        const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.textContent = "Post " + n + " (page " + (page + 1) + ")";
+        button.onclick = () => {
+          document.getElementById("out").textContent = "Opened post " + n;
+        };
+        li.append(button);
+        feed.append(li);
+      }
+      page++;
+      loading = false;
+      feed.setAttribute("aria-busy", "false");
+      if (page < PAGES) {
+        sentinel.textContent = "";
+        feed.append(sentinel);
+      } else {
+        const end = document.createElement("li");
+        end.textContent = "You are all caught up";
+        feed.append(end);
+      }
+    }, DELAY);
+  }
+  new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) load();
+    },
+    { root: feed },
+  ).observe(sentinel);
+  feed.append(sentinel);
+  load();
+</script>

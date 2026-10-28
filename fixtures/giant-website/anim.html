@@ -1,0 +1,81 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Animation</title>
+<style>
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    font: 20px system-ui;
+    color: #fff;
+  }
+  /* The whole page is one flat colour, so a video frame says which page it shows: blue opener, green popup. */
+  body.opener {
+    background: #0000ff;
+  }
+  body.popup {
+    background: #00b000;
+  }
+  #strip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 256px;
+    height: 16px;
+  }
+  main {
+    position: fixed;
+    top: 40px;
+    left: 300px;
+    right: 0;
+    padding: 12px;
+  }
+</style>
+<canvas id="strip" width="256" height="16"></canvas>
+<main>
+  <h1 id="title"></h1>
+  <p id="state" role="status"></p>
+  <button id="open" hidden>Open popup</button>
+  <button id="close" hidden>Close popup</button>
+</main>
+<script>
+  // A 16-bit frame counter drawn as 16 cells of 16px (white = 1, black = 0), advanced on every animation frame.
+  // Read back from a recording, it shows whether the page was painting, and how fast.
+  const role = new URLSearchParams(location.search).get("role") === "popup" ? "popup" : "opener";
+  document.body.className = role;
+  const ctx = document.getElementById("strip").getContext("2d");
+  let frame = 0;
+  function draw() {
+    for (let bit = 0; bit < 16; bit++) {
+      ctx.fillStyle = (frame >> (15 - bit)) & 1 ? "#fff" : "#000";
+      ctx.fillRect(bit * 16, 0, 16, 16);
+    }
+    frame = (frame + 1) & 0xffff;
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+  const state = document.getElementById("state");
+  if (role === "opener") {
+    document.getElementById("title").textContent = "Opener page";
+    state.textContent = "Popup not opened";
+    const open = document.getElementById("open");
+    open.hidden = false;
+    open.onclick = () => window.open("/anim.html?role=popup", "animation", "width=900,height=700");
+    addEventListener("message", (event) => {
+      if (event.data === "popup:closed") state.textContent = "Popup closed";
+    });
+  } else {
+    document.getElementById("title").textContent = "Popup page";
+    state.textContent = "Starting";
+    // The popup stays for a moment, so its animation has time to be seen, then lets the test close it.
+    setTimeout(() => {
+      state.textContent = "Popup ready";
+      const close = document.getElementById("close");
+      close.hidden = false;
+      close.onclick = () => {
+        opener?.postMessage("popup:closed", "*");
+        window.close();
+      };
+    }, 2000);
+  }
+</script>

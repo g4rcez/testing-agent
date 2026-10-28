@@ -180,8 +180,10 @@ console.log(JSON.stringify({success:true,data}));
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line));
-    expect(commands[0]).toContain("record");
-    expect(commands[0]).toContain("start");
+    // The fake browser has no CDP address, so the tab-following recorder cannot start and agent-browser's own does.
+    expect(commands[0]).toContain("cdp-url");
+    const recording = commands.find((command) => command.includes("record"));
+    expect(recording).toContain("start");
     expect(commands.at(-1)).toContain("stop");
     expect((await Bun.file(result.reports.json).json()).steps).toEqual(result.steps);
     const failing = Bun.spawn([process.execPath, "src/cli.ts", "test", path], {
