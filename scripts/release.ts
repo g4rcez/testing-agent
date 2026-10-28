@@ -50,8 +50,14 @@ export async function verifyNpmPublication(
   integrity: string,
   request: (url: string) => Promise<Response> = (url) =>
     fetch(url, { signal: AbortSignal.timeout(15000), cache: "no-store" }),
+  retry = { attempts: 18, delayMs: 10_000 },
 ): Promise<void> {
-  const response = await request(`https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`);
+  // A fresh publication can return 404 for a short time while the registry propagates.
+  let response = await request(`https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`);
+  for (let attempt = 1; response.status === 404 && attempt < retry.attempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, retry.delayMs));
+    response = await request(`https://registry.npmjs.org/testing-agent/${version}?verify=${Date.now()}`);
+  }
   if (!response.ok)
     throw new Error(
       `npm ${version} is not publicly available (${response.status}); check staged-publication approval before creating a GitHub release`,
