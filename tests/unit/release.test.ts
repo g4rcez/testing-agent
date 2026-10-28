@@ -8,6 +8,7 @@ import {
   npmPublishEnvironment,
   verifyNpmPublication,
   publicationBaseline,
+  withVersion,
 } from "../../scripts/release.ts";
 
 test("provenance requires GitHub OIDC", () => {

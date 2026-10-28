@@ -141,6 +141,36 @@ async function command(
   ).stdout.trim();
 }
 
+// Replaces only the version line so the committed file keeps its formatting.
+export function withVersion(manifest: string, version: string): string {
+  return manifest.replace(/^(\s*"version":\s*)"[^"]*"/m, `$1"${version}"`);
+}
+
+// Keeps main's package.json in step with npm. The message is untyped on purpose:
+// nextVersion ignores it, so the commit never triggers a release of its own.
+async function syncVersion(repository: string, version: string): Promise<void> {
+  const url = `https://x-access-token:${process.env.GH_TOKEN ?? ""}@github.com/${repository}.git`;
+  await command("git", ["fetch", url, "main"]);
+  await command("git", ["checkout", "--force", "-B", "version-sync", "FETCH_HEAD"]);
+  const current = await readFile("package.json", "utf8");
+  const next = withVersion(current, version);
+  if (next === current) return;
+  await writeFile("package.json", next);
+  await command("git", [
+    "-c",
+    "user.name=github-actions[bot]",
+    "-c",
+    "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+    "commit",
+    "--only",
+    "package.json",
+    "--message",
+    `Sync package.json version to ${version} [skip ci]`,
+  ]);
+  // A plain push fails if main moved; a rerun of this workflow repairs that.
+  await command("git", ["push", url, "version-sync:main"]);
+}
+
 async function release(): Promise<void> {
   const repository = "g4rcez/testing-agent";
   if (
@@ -264,6 +294,7 @@ async function release(): Promise<void> {
       await rm(directory, { recursive: true, force: true });
     }
   } else if (!github.ok) throw new Error(`GitHub release lookup failed (${github.status})`);
+  await syncVersion(repository, version);
   console.log(JSON.stringify({ released: true, package: `testing-agent@${version}`, tag, revision, integrity }));
 }
 
