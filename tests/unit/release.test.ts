@@ -89,8 +89,9 @@ test("npm command success is not proof of a public, matching publication", async
     gitHead: "revision",
     dist: { integrity: "sha512-expected" },
   };
+  const retry = { attempts: 2, delayMs: 0 };
   const verify = (body: unknown, status = 200) =>
-    verifyNpmPublication("0.0.1", "revision", "sha512-expected", async () => Response.json(body, { status }));
+    verifyNpmPublication("0.0.1", "revision", "sha512-expected", async () => Response.json(body, { status }), retry);
   await expect(verify(artifact)).resolves.toBeUndefined();
   await expect(verify("version not found", 404)).rejects.toThrow("staged");
   await expect(verify({}, 503)).rejects.toThrow("not publicly available");
@@ -206,4 +207,19 @@ test("version sync changes only the version line", () => {
 
 test("the version sync commit does not publish a release", () => {
   expect(nextVersion("1.3.0", ["Sync package.json version to 1.3.0 [skip ci]"])).toBeNull();
+});
+
+test("npm verification waits for registry propagation", async () => {
+  let calls = 0;
+  const artifact = {
+    name: "testing-agent",
+    version: "0.0.1",
+    gitHead: "revision",
+    dist: { integrity: "sha512-expected" },
+  };
+  const request = async () => (++calls < 3 ? new Response("not found", { status: 404 }) : Response.json(artifact));
+  await expect(
+    verifyNpmPublication("0.0.1", "revision", "sha512-expected", request, { attempts: 3, delayMs: 0 }),
+  ).resolves.toBeUndefined();
+  expect(calls).toBe(3);
 });
