@@ -82,6 +82,9 @@
     "react-window": "^2.5.1",
     "typescript": "7.0.2"
   },
+  "overrides": {
+    "qs": "6.17.0"
+  },
   "peerDependencies": {
     "agent-browser": ">=0.37.0"
   },
