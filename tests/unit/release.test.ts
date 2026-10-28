@@ -8,6 +8,7 @@ import {
   npmPublishEnvironment,
   verifyNpmPublication,
   publicationBaseline,
+  withVersion,
 } from "../../scripts/release.ts";
 
 test("provenance requires GitHub OIDC", () => {
@@ -195,4 +196,14 @@ test("publishing is gated by both CI runners and restricted to main, never PRs",
   expect(source.indexOf("NPM_TOKEN: $")).toBeGreaterThan(
     source.indexOf("name: Publish npm package and GitHub release"),
   );
+});
+
+test("version sync changes only the version line", () => {
+  expect(withVersion('{\n  "name": "x",\n  "version": "1.2.1",\n  "files": ["a"]\n}\n', "1.3.0")).toBe(
+    '{\n  "name": "x",\n  "version": "1.3.0",\n  "files": ["a"]\n}\n',
+  );
+});
+
+test("the version sync commit does not publish a release", () => {
+  expect(nextVersion("1.3.0", ["Sync package.json version to 1.3.0 [skip ci]"])).toBeNull();
 });

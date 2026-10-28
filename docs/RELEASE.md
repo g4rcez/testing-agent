@@ -11,7 +11,7 @@
   - **minor**: `feat`, `refactor` (including `refactor!`), `ci`, `perf`, `fix` (including `fix!`)
   - **patch**: `build`, `chore`, `style`, `test`, `docs`
   - Other messages (merge commits, `wip`, untyped) do not publish. A `!` on a non-`feat` type does not raise it above its own level.
-- Version changes affect the release workspace only; there are no version-bump commits or CI loops. Tags and npm versions hold release history.
+- After the GitHub Release exists, the workflow commits `Sync package.json version to X.Y.Z [skip ci]` to `main` so `package.json` matches npm. The message is untyped, so it never publishes a release, and `GITHUB_TOKEN` pushes start no workflow. If `main` moved, the push fails; rerun the original workflow. Branch protection on `main` must allow this push.
 - Releases are serialized. Keep the legacy concurrency group identifier so renamed workflows also serialize against earlier runs.
 - The release tags the exact source revision whose checks passed. npm publication with provenance and public-registry verification must succeed before GitHub Release creation.
 

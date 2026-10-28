@@ -1,5 +1,6 @@
 import { extname, resolve } from "node:path";
 import { z } from "zod";
+import pkg from "../package.json" with { type: "json" };
 import { layaSettingsSchema, runSchema } from "./contracts.ts";
 import { cancelRun, defaultDependencies, loadRun, recoverRun, resumeRun, startRun, summarize } from "./runner.ts";
 import { stateRoot } from "./store.ts";
@@ -18,6 +19,7 @@ Usage:
   jev-test validate <test.json|test.yaml|test.yml>
   jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
   testing-agent init [folder] [--yaml|--json]
+  testing-agent -v|--version
   testing-agent setup [--manual]
   testing-agent setup laya [--language L] [--max-len N] [--head-max-len N] [--threads N] [--model-dir DIR]
   testing-agent lsp <file.yaml|file.yml|file.json>
@@ -55,6 +57,10 @@ export async function runCli(args: string[]): Promise<number> {
   const [command, positional, ...rest] = args;
   if (!command || command === "--help" || command === "help") {
     console.log(help);
+    return 0;
+  }
+  if (command === "-v" || command === "--version") {
+    console.log(pkg.version);
     return 0;
   }
   if (command === "schema") {
