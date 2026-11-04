@@ -42,7 +42,11 @@ test("typing a known value into a named field is resolved without the model", ()
   expect(
     resolveFast(input, 0, wiki, [{ stepIndex: 0, operation: "TYPE_TEXT", target: "Search Wikipedia", source: "fast" }]),
   ).toBeNull();
-  expect(resolveFast(run([{ instruction: "Type IPv4 into the Search Wikipedia box" }]), 0, wiki, [])).toBeNull();
+  // With no value given, the text is the one the sentence says.
+  expect(resolveFast(run([{ instruction: "Type IPv4 into the Search Wikipedia box" }]), 0, wiki, [])).toMatchObject({
+    operation: "TYPE_TEXT",
+    text: "IPv4",
+  });
   // A secret is bound to a selector; with no field on the page marked as matching it, the step is left to the model.
   expect(
     resolveFast(
@@ -52,6 +56,17 @@ test("typing a known value into a named field is resolved without the model", ()
       [],
     ),
   ).toBeNull();
+});
+
+test("the value is cut out of the instruction as a whole word, not from inside another word", () => {
+  const fields = page({
+    TYPE_TEXT: {
+      e1: target("e1", "Login", "textbox", { currentValue: "" }),
+      e2: target("e2", "In", "textbox", { currentValue: "" }),
+    },
+  });
+  const input = run([{ instruction: "Fill in the Login field with log", value: "log" }]);
+  expect(resolveFast(input, 0, fields, [])).toMatchObject({ operation: "TYPE_TEXT", targetId: "e1" });
 });
 
 test("a step bound to a selector types into the field the page marked as matching it", () => {
@@ -196,6 +211,40 @@ test("a field assumption is answered from the page, or left to the model", () =>
   expect(assumeDeterministic("The Missing box contains IPv4", typed)).toBeUndefined();
   expect(assumeDeterministic("The page shows the article", typed)).toBeUndefined();
   expect(assumeDeterministic("The Search Wikipedia box contains IPv4 or IPv6", typed)).toBeUndefined();
+});
+
+test("a dropdown or switch assumption is answered from the page, or left to the model", () => {
+  const form = page({
+    CLICK: {
+      e1: target("e1", "Newsletter", "checkbox", { checked: "true" }),
+      e2: target("e2", "Notifications", "switch", { checked: "false" }),
+      e3: target("e3", "Terms", "checkbox"),
+    },
+  });
+  const withCategory = (elements: Observation["elements"]) => ({ ...form, elements });
+  const category = (value: string, label = "Category") => ({
+    index: "e5",
+    label,
+    role: "combobox",
+    value,
+    operations: ["SELECT"],
+  });
+  expect(assumeDeterministic("The Newsletter checkbox is checked", form)).toBe(true);
+  expect(assumeDeterministic("The Newsletter checkbox is unchecked", form)).toBe(false);
+  expect(assumeDeterministic("The Notifications switch is off", form)).toBe(true);
+  expect(assumeDeterministic("The Notifications switch is on", form)).toBe(false);
+  // A box that does not say whether it is checked, one the page lacks, and a negation are not guessed.
+  expect(assumeDeterministic("The Terms checkbox is checked", form)).toBeUndefined();
+  expect(assumeDeterministic("The Privacy checkbox is checked", form)).toBeUndefined();
+  expect(assumeDeterministic("The Newsletter checkbox is not checked", form)).toBeUndefined();
+  expect(assumeDeterministic("The Category dropdown shows Design", withCategory([category("Design")]))).toBe(true);
+  expect(assumeDeterministic("The Category dropdown shows Travel", withCategory([category("Design")]))).toBe(false);
+  expect(
+    assumeDeterministic(
+      "The Category dropdown shows Design",
+      withCategory([category("Design"), category("Design", "Category 2")]),
+    ),
+  ).toBeUndefined();
 });
 
 const container = (id: string, label: string, below: string[], above: string[] = []): Target =>

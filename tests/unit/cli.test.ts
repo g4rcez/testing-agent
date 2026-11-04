@@ -270,3 +270,64 @@ console.log(JSON.stringify({success:true,data}));
     expect(result.stderr).toContain("Test definition exceeds 1 MB");
   });
 });
+
+async function cli(...args: string[]) {
+  const child = Bun.spawn([process.execPath, "src/cli.ts", ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { stdout, stderr, code };
+}
+
+describe("CLI conventions", () => {
+  test("-h and --help work for the tool and for every command, on stdout with exit code 0", async () => {
+    const general = await cli("--help");
+    expect(general.code).toBe(0);
+    expect(general.stdout).toContain("Commands:");
+    expect((await cli("-h")).stdout).toBe(general.stdout);
+    expect((await cli("help")).stdout).toBe(general.stdout);
+    const test = await cli("test", "--help");
+    expect(test.code).toBe(0);
+    expect(test.stdout).toContain("Usage: testing-agent test <file.yaml|file.yml|file.json>");
+    expect((await cli("help", "test")).stdout).toBe(test.stdout);
+    expect((await cli("validate", "some.yaml", "-h")).stdout).toContain("Usage: testing-agent validate <file>");
+  });
+
+  test("-v, -V and --version print the version alone", async () => {
+    const version = (await Bun.file("package.json").json()).version;
+    for (const flag of ["-v", "-V", "--version"]) expect((await cli(flag)).stdout).toBe(`${version}\n`);
+  });
+
+  test("an unknown command or option is a usage error with a pointer to the help", async () => {
+    const command = await cli("bogus");
+    expect(command.code).toBe(2);
+    expect(command.stdout).toBe("");
+    expect(JSON.parse(command.stderr)).toEqual({
+      error: 'Unknown command "bogus"',
+      hint: "Run 'testing-agent --help' for usage.",
+    });
+    const option = await cli("validate", "--nope", "test.yaml");
+    expect(option.code).toBe(2);
+    expect(JSON.parse(option.stderr).error).toContain("Unknown option '--nope'");
+    expect((await cli("help", "bogus")).code).toBe(2);
+    expect((await cli("validate")).code).toBe(2);
+  });
+
+  test("options go before or after the file, as --name value or --name=value, and -- ends them", async () => {
+    const path = join(directory, "conventions.yaml");
+    await Bun.write(path, yaml);
+    for (const args of [
+      ["validate", path, "--video-fps", "30"],
+      ["validate", "--video-fps", "30", path],
+      ["validate", path, "--video-fps=30"],
+      ["validate", "--", path],
+    ]) {
+      const result = await cli(...args);
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ valid: true, name: "Example", steps: 1 });
+    }
+    expect((await cli("validate", path, "--video-fps=99")).code).toBe(2);
+  });
+});

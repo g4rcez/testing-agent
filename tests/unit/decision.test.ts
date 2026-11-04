@@ -62,9 +62,29 @@ test("an assumption needs its distinctive words visible on the page", async () =
   expect(assumptionGrounded("The Search Wikipedia box contains IPv4", page)).toBe(true);
   expect(assumptionGrounded("The Search Wikipedia box contains Spider-Man", page)).toBe(false);
   expect(assumptionGrounded("the SEARCH wikipedia box contains ipv4", page)).toBe(true);
+  // A word counts only when the page shows it whole: "IP" is not "IPv4".
+  expect(assumptionGrounded("The Search Wikipedia box contains IP", page)).toBe(false);
+  // A token such as "5.1" stays whole: the page showing 1 and 5 apart does not ground it.
+  const price = { ...page, text: "Version 1 of 5", elements: [{ ...page.elements[0]!, value: "5.1" }] };
+  expect(assumptionGrounded("The Search Wikipedia box contains 1.5", price)).toBe(false);
+  expect(assumptionGrounded("The Search Wikipedia box contains 5.1", price)).toBe(true);
   expect(
     assumptionGrounded("The box contains Café", { ...page, elements: [{ ...page.elements[0]!, value: "CAFE" }] }),
   ).toBe(true);
+});
+
+test("an assumption is grounded in the languages of the test", async () => {
+  const { assumptionGrounded } = await import("../../src/decision.ts");
+  const page: Observation = {
+    ...observation,
+    text: "Início",
+    elements: [{ index: "e1", label: "Pesquisar", role: "searchbox", value: "IPv4", operations: ["TYPE_TEXT"] }],
+  };
+  expect(assumptionGrounded("A caixa Pesquisar contém IPv4", page, ["pt"])).toBe(true);
+  expect(assumptionGrounded("A caixa Pesquisar contém Brasil", page, ["pt"])).toBe(false);
+  // Without the language, "caixa" and "contém" are words the page does not show.
+  expect(assumptionGrounded("A caixa Pesquisar contém IPv4", page)).toBe(false);
+  expect(assumptionGrounded("El cuadro Pesquisar contiene IPv4", page, ["es"])).toBe(true);
 });
 
 test("scrollable containers reach the model with what they hide, and the scroll operations are described", async () => {

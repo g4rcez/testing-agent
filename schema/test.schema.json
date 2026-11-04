@@ -60,50 +60,59 @@
                 "maxLength": 60
               },
               "expect": {
-                "type": "object",
-                "properties": {
-                  "caseSensitive": {
-                    "type": "boolean"
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "caseSensitive": {
+                        "type": "boolean"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "selector": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "visible": {
+                        "type": "boolean"
+                      },
+                      "value": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "checked": {
+                        "type": "boolean"
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "timeoutMs": {
+                        "default": 2000,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10000
+                      },
+                      "search": {
+                        "type": "boolean"
+                      }
+                    }
                   },
-                  "text": {
+                  {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 10000
-                  },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "selector": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1000
-                  },
-                  "visible": {
-                    "type": "boolean"
-                  },
-                  "value": {
-                    "type": "string",
                     "maxLength": 2000
-                  },
-                  "checked": {
-                    "type": "boolean"
-                  },
-                  "count": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10000
-                  },
-                  "timeoutMs": {
-                    "default": 2000,
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 10000
-                  },
-                  "search": {
-                    "type": "boolean"
                   }
-                }
+                ]
               }
             },
             "required": [
@@ -350,6 +359,21 @@
       "default": true,
       "type": "boolean"
     },
+    "languages": {
+      "default": [
+        "en"
+      ],
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "en",
+          "pt",
+          "es"
+        ]
+      }
+    },
     "timeoutMs": {
       "default": 45000,
       "type": "integer",
@@ -367,50 +391,59 @@
       "maxItems": 20,
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "caseSensitive": {
-            "type": "boolean"
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "caseSensitive": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "checked": {
+                "type": "boolean"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "timeoutMs": {
+                "default": 2000,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000
+              },
+              "search": {
+                "type": "boolean"
+              }
+            }
           },
-          "text": {
+          {
             "type": "string",
             "minLength": 1,
-            "maxLength": 10000
-          },
-          "url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "selector": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "visible": {
-            "type": "boolean"
-          },
-          "value": {
-            "type": "string",
             "maxLength": 2000
-          },
-          "checked": {
-            "type": "boolean"
-          },
-          "count": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 10000
-          },
-          "timeoutMs": {
-            "default": 2000,
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 10000
-          },
-          "search": {
-            "type": "boolean"
           }
-        }
+        ]
       }
     },
     "minConfidence": {

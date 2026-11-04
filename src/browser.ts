@@ -90,6 +90,12 @@ export class StaleDecisionError extends Error {}
 export class BrowserDeadlineError extends Error {}
 export class BrowserCommandRejectedError extends Error {}
 
+// A page that is still navigating fails a read. The read is repeated at this pace, so a page that is ready is seen
+// within this time; the attempts below keep the whole wait as long as it was with two longer pauses.
+const RETRY_PAUSE_MS = 100;
+const OBSERVE_ATTEMPTS = 15;
+const ASSERT_ATTEMPTS = 11;
+
 export class Browser {
   constructor(
     readonly session: string,
@@ -98,9 +104,22 @@ export class Browser {
     readonly config?: BrowserConfig,
   ) {}
 
+  /** Every agent-browser process this instance started, and the time they took. */
+  readonly stats = { calls: 0, ms: 0 };
+
   async command(args: string[], stdin?: string): Promise<unknown> {
     const remaining = this.deadline - Date.now();
     if (remaining <= 0) throw new BrowserDeadlineError("Browser call deadline reached");
+    const started = performance.now();
+    this.stats.calls++;
+    try {
+      return await this.spawn(args, remaining, stdin);
+    } finally {
+      this.stats.ms += performance.now() - started;
+    }
+  }
+
+  private async spawn(args: string[], remaining: number, stdin?: string): Promise<unknown> {
     let stdout: string;
     try {
       const child = Bun.spawn(
@@ -152,13 +171,13 @@ export class Browser {
         return await this.evaluate({ type: "observe", dialogs: this.config?.dialogs, bind, goal });
       } catch (error) {
         if (
-          attempt >= 3 ||
+          attempt >= OBSERVE_ATTEMPTS ||
           this.signal?.aborted ||
           error instanceof BrowserDeadlineError ||
           this.deadline - Date.now() < 3000
         )
           throw error;
-        await Bun.sleep(700);
+        await Bun.sleep(RETRY_PAUSE_MS);
       }
     }
   }
@@ -251,13 +270,13 @@ export class Browser {
         return result;
       } catch (error) {
         if (
-          attempt >= 3 ||
+          attempt >= ASSERT_ATTEMPTS ||
           !(error instanceof RunError && error.code === "BROWSER_COMMAND_FAILED") ||
           this.signal?.aborted ||
           this.deadline - Date.now() < 3000
         )
           throw error;
-        await Bun.sleep(500);
+        await Bun.sleep(RETRY_PAUSE_MS);
       }
     }
   }

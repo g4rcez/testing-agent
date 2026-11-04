@@ -21,6 +21,15 @@ describe("plugin inputs", () => {
     expect(runSchema.safeParse({ ...input, session: "--config evil" }).success).toBe(false);
     expect(runSchema.safeParse({ ...input, url: "javascript:alert(1)" }).success).toBe(false);
   });
+  test("steps are in English unless the test lists its languages", () => {
+    expect(runSchema.parse(input).languages).toEqual(["en"]);
+    expect(runSchema.parse({ ...input, languages: ["pt", "en"] }).languages).toEqual(["pt", "en"]);
+  });
+  test("rejects an unknown, a repeated or an empty list of languages", () => {
+    expect(runSchema.safeParse({ ...input, languages: ["xx"] }).success).toBe(false);
+    expect(runSchema.safeParse({ ...input, languages: ["pt", "pt"] }).success).toBe(false);
+    expect(runSchema.safeParse({ ...input, languages: [] }).success).toBe(false);
+  });
   test("requires an explicit backend and a browser destination", () => {
     expect(runSchema.safeParse({ ...input, backend: undefined }).success).toBe(false);
     expect(runSchema.safeParse({ ...input, url: undefined }).success).toBe(false);

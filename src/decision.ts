@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { BrowserDeadlineError } from "./browser.ts";
 import { RunError, topProbabilities } from "./diagnostics.ts";
+import { wholeWord } from "./grammar.ts";
+import { LEXICONS, type Language } from "./lexicon.ts";
 import { normalizeText } from "./normalize.ts";
 import type { Backend, Decision, Observation, RunInput, Step, Target } from "./contracts.ts";
 
@@ -363,6 +365,16 @@ export async function decide(
   };
 }
 
+/** The model that writes the text for a typing step that gives none, from the test or the environment. */
+export function textModelFor(input: RunInput) {
+  return (
+    input.textModel ??
+    (process.env.TEXT_MODEL_BASE_URL && process.env.TEXT_MODEL
+      ? { baseUrl: process.env.TEXT_MODEL_BASE_URL, model: process.env.TEXT_MODEL, apiKeyEnv: "TEXT_MODEL_API_KEY" }
+      : undefined)
+  );
+}
+
 export async function fieldValue(
   input: RunInput,
   step: Step,
@@ -379,11 +391,7 @@ export async function fieldValue(
     if (value.length > 2000) throw new RunError("TEXT_VALUE_UNAVAILABLE", "Configured field value exceeds the limit");
     return value;
   }
-  const config =
-    input.textModel ??
-    (process.env.TEXT_MODEL_BASE_URL && process.env.TEXT_MODEL
-      ? { baseUrl: process.env.TEXT_MODEL_BASE_URL, model: process.env.TEXT_MODEL, apiKeyEnv: "TEXT_MODEL_API_KEY" }
-      : undefined);
+  const config = textModelFor(input);
   if (!config) throw new RunError("TEXT_VALUE_UNAVAILABLE", "Typing requires step.value or a configured textModel");
   const response = z
     .object({ choices: z.array(z.object({ message: z.object({ content: z.string() }) })).min(1) })
@@ -432,15 +440,14 @@ export async function fieldValue(
   return value;
 }
 
-const filler = new Set(
-  "a an and are as at be box button by contain contains containing currently field for has have in input is it link now of on page right search shows show shown text that the then there this to with".split(
-    " ",
-  ),
-);
-
 // A small model answers "yes" too easily, so every distinctive word of the
 // statement must also be visible in a field, the title, the URL or the page text.
-export function assumptionGrounded(statement: string, observation: Observation): boolean {
+export function assumptionGrounded(
+  statement: string,
+  observation: Observation,
+  languages: readonly Language[] = ["en"],
+): boolean {
+  const filler = new Set(languages.flatMap((language) => LEXICONS[language].filler.map((word) => normalizeText(word))));
   const evidence = normalizeText(
     [
       observation.url,
@@ -453,7 +460,7 @@ export function assumptionGrounded(statement: string, observation: Observation):
     .split(" ")
     .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
     .filter((word) => word && !filler.has(word))
-    .every((word) => evidence.includes(word));
+    .every((word) => wholeWord(word).test(evidence));
 }
 
 /**
@@ -470,7 +477,7 @@ export async function assume(
 ): Promise<boolean> {
   const statement = input.steps[stepIndex]?.assume;
   if (!statement) throw new Error("The current step has no assumption");
-  if (!assumptionGrounded(statement, observation)) return false;
+  if (!assumptionGrounded(statement, observation, input.languages)) return false;
   const config = backendConfig(input.backend);
   const response = responseSchema.parse(
     await post(

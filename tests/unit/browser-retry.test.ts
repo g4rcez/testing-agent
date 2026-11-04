@@ -40,11 +40,11 @@ test("an assertion is read again when the page is not ready the first time", asy
   expect(await Bun.file(counter).text()).toBe("2\n");
 });
 
-test("an assertion gives up after three failed reads", async () => {
+test("an assertion gives up after eleven failed reads, about a second of trying", async () => {
   await Bun.write(counter, "0");
-  process.env.FAIL_FIRST = "9";
+  process.env.FAIL_FIRST = "99";
   await expect(new Browser("retry", Date.now() + 20_000).assert([{ text: "x", timeoutMs: 0 }])).rejects.toThrow(
     "failed or timed out",
   );
-  expect(await Bun.file(counter).text()).toBe("3\n");
+  expect(await Bun.file(counter).text()).toBe("11\n");
 });

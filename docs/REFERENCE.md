@@ -31,7 +31,13 @@ testing-agent test test.yaml --backend laya --report-dir artifacts/my-test
 
 A test needs a prompt, ordered steps, a backend, and a URL or existing session. Use root `expect` assertions or an explicit final step `expect`. Model DONE alone cannot pass. Each step can provide `instruction`, exact `value`, and `expect`. Satisfied step assertions advance without another model call; known-unsatisfied assertions withhold DONE.
 
-CLI overrides include `--backend jev|laya`, `--url`, `--session`, `--video-fps 1-60`, and `--report-dir`. `jev-test run` remains an alias for `testing-agent test`. Existing commands and plugin protocol stay compatible.
+CLI overrides include `--backend jev|laya`, `--url`, `--session`, `--video-fps 1-60`, `--report-dir`, `--no-autostart` and `--no-fast-path`. `jev-test run` remains an alias for `testing-agent test`. Existing commands and plugin protocol stay compatible.
+
+### Command line
+
+`testing-agent --help` lists the commands and `testing-agent <command> --help` (or `help <command>`) describes one. `-v`, `-V` and `--version` print the version. Options can come before or after the file or run ID, as `--name value` or `--name=value`; `--` ends the options, so a file name that starts with `-` can follow it. An unknown command or option exits with code 2 and points to the help.
+
+Streams follow the usual split: the result of a command is on stdout (one JSON object, for programs), and messages are on stderr. At a terminal, stderr also carries a one-line result (`passed: <name> (8/8 steps, 3.9 s)`) and errors as `error: <message>` with what to do next. When stderr is not a terminal, an error is one JSON object (`error`, and `code`, `setup` or `hint` when they apply), as before. The tool prints no colour.
 
 ## Assertions
 
@@ -40,6 +46,19 @@ Each assertion can combine visible `text` and a `url`. Text and element `value` 
 For element checks, a test-authored CSS `selector` can be combined with `visible`, `value`, `checked`, or `count`. Element value/checked checks require exactly one match. A selector alone requires one match. Use `visible: false` or `count: 0` to assert absence.
 
 `timeoutMs` defaults to 2000 and can be at most 10000. Assertion waits observe DOM, input, and history events. Assertions inspect the main document; they do not pierce shadow roots.
+
+### Checks as sentences
+
+Anywhere an assertion is accepted (a step's `expect` and the final `expect` list) it can be a sentence instead of an object. The sentence is read into the same assertion, so everything above applies, `timeoutMs` included (2000).
+
+| Sentence                                                                               | Assertion                       |
+| -------------------------------------------------------------------------------------- | ------------------------------- |
+| `The page shows Large language model` (also `contains`, `displays`, `has`, `includes`) | `text: Large language model`    |
+| `I see Welcome back` or `Welcome back is visible`                                      | `text: Welcome back`            |
+| `The URL is https://example.com/home`                                                  | `url: https://example.com/home` |
+| `The URL is https://example.com/home and the page shows Welcome`                       | both                            |
+
+A text in quotes is taken as written (`The page shows "Saved. And done"` keeps the period). A sentence that is none of these is refused with a message that says how to write it; use the object form for selectors, values, counts and `search`. Sentences are English.
 
 ## Browser configuration
 
@@ -133,7 +152,24 @@ A click or Enter that opens a tab or pop-up (`target=_blank`, `window.open`) is 
 
 Steps with a `selector` (other than typing into a field, see above), with words such as `if`, `unless`, `not`, `never`, `only`, `without`, `already`, `until` or `or`, or with an instruction the rules do not recognise, go to the model. A fast action is tried once per step; if the page does not change as expected the model takes over. A step that only needs `value` typed is finished by the page (`verification: deterministic`), and `assume: "The <field> box contains <value>"` is checked on the page too. Clicks without an `expect` still ask the model whether the step is done.
 
+`assume` is also checked on the page, with no model, for a dropdown (`The <field> dropdown shows <option>`) and a checkbox or switch (`The <label> checkbox is checked` / `is unchecked`, `is on` / `is off`) when exactly one control matches and the page reports its state.
+
 When no step needs the model, a local Laya server that autostart would have launched is never started.
+
+#### Languages
+
+`languages` (default `["en"]`) lists the languages that step instructions and `assume` statements are written in: `en`, `pt` (Portuguese) and `es` (Spanish). Each step is read in each listed language, in that order, and the first language whose rules settle it wins; the matching tiers and the one-control rule above are the same in every language.
+
+```yaml
+languages: [pt, en]
+steps:
+  - instruction: Digite IPv4 na caixa Pesquisar
+    value: IPv4
+    assume: A caixa Pesquisar contém IPv4
+  - Clique no botão Pagar na seção Entrega
+```
+
+Every language has its own caution words (`se`, `nao`, `ou` / `si`, `no`, `o` ...), and a step that has one of them goes to the model, as in English. A language that is not listed is not tried: with the default, a Portuguese step goes to the model. Case and accents are ignored (`botão` and `BOTAO` are the same word). `languages` changes only how the runner reads steps from the page. The model still uses `backend.laya.language`, and only the English checkpoint is published for the pinned revision, so a non-English step that reaches the model can be less accurate. The words of each language are in `src/lexicon.ts`; adding a language is adding one entry there and its code to `LANGUAGES`.
 
 A run that does not complete explains itself. `reasonCode` is a stable identifier next to the human `reason` (`MODEL_BLOCKED`, `MODEL_BLOCKED_NO_SCROLL`, `BACKEND_TIMEOUT`, `BACKEND_UNREACHABLE`, `BACKEND_HTTP`, `BACKEND_INVALID_RESPONSE`, `LOW_CONFIDENCE`, `NO_PAGE_CHANGE`, `STEP_DECISION_BUDGET`, `ACTION_BUDGET`, `CALL_DEADLINE`, `TOTAL_DEADLINE`, `DONE_ASSERTION_FAILED`, `FINAL_ASSERTION_FAILED`, `SEARCH_NOT_FOUND`, `SEARCH_BUDGET`, `STALE_OBSERVATION`, `STALE_TARGET`, `BROWSER_COMMAND_FAILED`, `INPUT_ACK_INTERRUPTED`, `INPUT_RECEIPT_MISSING`, `VIDEO_*`, `CANCELLED`, `INTERNAL`), and `debug` holds the last decision (operation, target, confidence, the most likely options and their probabilities, whether the model chose it, inference time), the last observation (URL, title, number of targets per operation, offered controls, a 400-character page excerpt), counters, timings, the backend or browser error with its details, and the failing assertion checks. The failed step carries the same codes, the JSON report includes all of it, and the JUnit failure body prints it. Page excerpts can contain page content; treat reports like logs.
 

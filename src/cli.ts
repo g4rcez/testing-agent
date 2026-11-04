@@ -1,8 +1,18 @@
 import { extname, resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { layaSettingsSchema, runSchema } from "./contracts.ts";
-import { cancelRun, defaultDependencies, loadRun, recoverRun, resumeRun, startRun, summarize } from "./runner.ts";
+import {
+  cancelRun,
+  defaultDependencies,
+  loadRun,
+  recoverRun,
+  resumeRun,
+  startRun,
+  summarize,
+  type RunState,
+} from "./runner.ts";
 import { stateRoot } from "./store.ts";
 import { writeReports } from "./report.ts";
 import { insertEditorSchema, testJsonSchema } from "./editor-schema.ts";
@@ -14,17 +24,34 @@ import { detectEnv, formatManual, planSetup, runSetup } from "./setup.ts";
 const help = `testing-agent - AI-driven browser tests through agent-browser
 
 Usage:
-  testing-agent test <file.yaml|file.yml|file.json> [--backend jev|laya] [--url URL] [--session NAME] [--video-fps 1-60] [--report-dir DIR] [--no-autostart] [--no-fast-path]
-  jev-test run <test.json|test.yaml|test.yml> [--backend jev|laya] [--url URL] [--session NAME] [--video-fps 1-60] [--report-dir DIR]
-  jev-test validate <test.json|test.yaml|test.yml>
-  jev-test status|resume|recover|cancel <run-id> [--report-dir DIR]
-  testing-agent init [folder] [--yaml|--json]
-  testing-agent -v|--version
-  testing-agent setup [--manual]
-  testing-agent setup laya [--language L] [--max-len N] [--head-max-len N] [--threads N] [--model-dir DIR]
-  testing-agent lsp <file.yaml|file.yml|file.json>
-  jev-test schema
-  jev-test --help
+  testing-agent <command> [options]
+
+Commands:
+  test <file>          Run a test definition (YAML or JSON); alias: run
+  validate <file>      Check a test definition without opening a browser
+  status <run-id>      Print the result of a run
+  resume <run-id>      Continue a paused run
+  recover <run-id>     Check an interrupted run's last input and continue
+  cancel <run-id>      Cancel a running or paused run
+  init [folder]        Create an example test (--yaml or --json)
+  setup [laya]         Install or start the optional local backend
+  lsp <file>           Add the editor schema reference to a test file
+  schema               Print the JSON Schema of a test definition
+  help [command]       Show help for a command
+
+Options for test, run, validate, status, resume, recover and cancel:
+  --backend jev|laya   Decision backend        --url URL           Page to open
+  --session NAME       Browser session         --video-fps 1-60    Video frame rate
+  --report-dir DIR     Where reports go        --no-autostart      Do not start a local Laya server
+  --no-fast-path       Send every step to the model
+
+General options:
+  -h, --help           Show help (also: testing-agent <command> --help)
+  -v, -V, --version    Print the version
+  --                   End of options; what follows is a file name or a run ID
+
+Options take a value as "--url URL" or "--url=URL", and can come before or after the file.
+The same binary is installed as agent-tester, jev-test and agent-browser-jev.
 
 A local Laya server that is not running is started for the run and stopped with it; --no-autostart
 (or TESTING_AGENT_AUTOSTART=0, backend.autostart: false) turns that off. In CI it is off unless
@@ -40,6 +67,37 @@ are written for terminal results. Exit codes: 0 passed, 1 failed/blocked/uncerta
 2 invalid input, 130 cancelled. Credentials come from environment variables.
 `;
 
+// What `testing-agent <command> --help` prints. The general help above lists every option once.
+const commandHelp: Record<string, string> = {
+  test: "Usage: testing-agent test <file.yaml|file.yml|file.json> [options]\n\nRuns the test, records video, writes JSON and JUnit reports and prints the result as JSON on stdout.\nExit codes: 0 passed, 1 failed/blocked/uncertain, 2 invalid input, 130 cancelled.\nOptions: --backend, --url, --session, --video-fps, --report-dir, --no-autostart, --no-fast-path.",
+  run: "Usage: testing-agent run <file> [options]\n\nSame as test.",
+  validate:
+    "Usage: testing-agent validate <file> [options]\n\nChecks the test definition and prints {valid, name, steps}. No browser is opened and no backend is needed.\nExit codes: 0 valid, 2 invalid.",
+  status: "Usage: testing-agent status <run-id>\n\nPrints the stored result of a run.",
+  resume: "Usage: testing-agent resume <run-id> [options]\n\nContinues a paused run within its total deadline.",
+  recover:
+    "Usage: testing-agent recover <run-id> [options]\n\nChecks the receipt of the last input of an interrupted run and, if it was executed, continues.",
+  cancel: "Usage: testing-agent cancel <run-id>\n\nAsks a running or paused run to stop.",
+  init: "Usage: testing-agent init [folder] [--yaml|--json]\n\nCreates an example test and prints what it created.",
+  setup:
+    "Usage: testing-agent setup [--manual]\n       testing-agent setup laya [--language L] [--revision R] [--model-dir DIR] [--max-len N] [--head-max-len N] [--threads N]\n\nsetup installs what the tests need; --manual prints the steps instead. setup laya runs the local model server in the foreground.",
+  lsp: "Usage: testing-agent lsp <file>\n\nAdds the editor JSON Schema reference to a test file and prints what it did.",
+  schema: "Usage: testing-agent schema\n\nPrints the JSON Schema of a test definition.",
+};
+
+// One line for a person at a terminal; the JSON on stdout stays the result for programs.
+function resultLine(state: RunState): string {
+  const result = summarize(state);
+  const steps = `${result.steps.filter((step) => step.success).length}/${result.totalSteps} steps`;
+  const seconds = `${(result.elapsedMs / 1000).toFixed(1)} s`;
+  return result.passed
+    ? `passed: ${result.name} (${steps}, ${seconds})`
+    : `${state.status}: ${result.name}${result.reason ? ` - ${result.reason}` : ""} (${steps}, ${seconds})`;
+}
+
+/** A mistake in how the command was called: exit code 2, with a pointer to the help. */
+class UsageError extends Error {}
+
 async function readTest(path: string) {
   const file = Bun.file(path);
   if (file.size > 1_000_000) throw new Error("Test definition exceeds 1 MB");
@@ -53,16 +111,54 @@ async function readTest(path: string) {
   return z.record(z.string(), z.unknown()).parse(value);
 }
 
+const runOptions = {
+  backend: { type: "string" },
+  url: { type: "string" },
+  session: { type: "string" },
+  "video-fps": { type: "string" },
+  "report-dir": { type: "string" },
+  "no-autostart": { type: "boolean" },
+  "no-fast-path": { type: "boolean" },
+} as const;
+
+/** One operand (a file or a run ID) and the options, in any order; `--opt value`, `--opt=value` and `--` work. */
+function parseCommandLine(argv: string[]) {
+  const { values, positionals } = parseArgs({ args: argv, options: runOptions, allowPositionals: true });
+  if (positionals.length !== 1) throw new Error("Give one test file or run ID; use --help");
+  const flags: Record<string, string> = {};
+  for (const name of ["backend", "url", "session", "video-fps", "report-dir"] as const) {
+    const value = values[name];
+    if (value !== undefined) flags[`--${name}`] = value;
+  }
+  return {
+    operand: positionals[0]!,
+    flags,
+    noAutostart: values["no-autostart"] === true,
+    noFastPath: values["no-fast-path"] === true,
+  };
+}
+
 export async function runCli(args: string[]): Promise<number> {
   const [command, positional, ...rest] = args;
-  if (!command || command === "--help" || command === "help") {
+  const wantsHelp = args.some(
+    (arg, index) => (arg === "-h" || arg === "--help") && !args.slice(0, index).includes("--"),
+  );
+  if (!command || command === "--help" || command === "-h" || (command === "help" && !positional)) {
     console.log(help);
     return 0;
   }
-  if (command === "-v" || command === "--version") {
+  if (command === "help" || wantsHelp) {
+    const topic = command === "help" ? positional! : command;
+    const text = commandHelp[topic];
+    if (!text) throw new UsageError(`Unknown command "${topic}"`);
+    console.log(text);
+    return 0;
+  }
+  if (command === "-v" || command === "-V" || command === "--version") {
     console.log(pkg.version);
     return 0;
   }
+  if (!(command in commandHelp)) throw new UsageError(`Unknown command "${command}"`);
   if (command === "schema") {
     console.log(JSON.stringify(testJsonSchema(), null, 2));
     return 0;
@@ -122,35 +218,24 @@ export async function runCli(args: string[]): Promise<number> {
     }
     return (await runSetup(env)).failed ? 1 : 0;
   }
-  if (!positional) throw new Error("A test file or run ID is required; use --help");
   if (command === "lsp") {
-    if (rest.length) throw new Error("The lsp command takes one file and no options");
+    if (!positional || rest.length) throw new UsageError("The lsp command takes one file and no options");
     console.log(JSON.stringify(await insertEditorSchema(positional)));
     return 0;
   }
-  const flags: Record<string, string> = {};
-  const noAutostart = rest.includes("--no-autostart");
-  const noFastPath = rest.includes("--no-fast-path");
-  const pairs = rest.filter((arg) => arg !== "--no-autostart" && arg !== "--no-fast-path");
-  for (let index = 0; index < pairs.length; index += 2) {
-    const flag = pairs[index],
-      value = pairs[index + 1];
-    if (
-      !flag ||
-      !["--backend", "--url", "--session", "--video-fps", "--report-dir"].includes(flag) ||
-      !value ||
-      value.startsWith("--") ||
-      flags[flag]
-    )
-      throw new Error("Invalid or repeated option; use --help");
-    flags[flag] = value;
+  let parsed: ReturnType<typeof parseCommandLine>;
+  try {
+    parsed = parseCommandLine(args.slice(1));
+  } catch (error) {
+    throw new UsageError(error instanceof Error ? error.message : "Invalid options");
   }
+  const { operand, flags, noAutostart, noFastPath } = parsed;
   if (command === "cancel") {
-    console.log(JSON.stringify(await cancelRun(z.uuid().parse(positional))));
+    console.log(JSON.stringify(await cancelRun(z.uuid().parse(operand))));
     return 0;
   }
   if (command === "status") {
-    console.log(JSON.stringify(summarize(await loadRun(z.uuid().parse(positional)))));
+    console.log(JSON.stringify(summarize(await loadRun(z.uuid().parse(operand)))));
     return 0;
   }
   // A local server is started only when a step needs the model, and stopped with the run; one that
@@ -161,6 +246,11 @@ export async function runCli(args: string[]): Promise<number> {
     backend = undefined;
     await server?.stop();
   };
+  // Without the fast path every step needs the model, so it loads while the browser opens instead of when the
+  // first step asks. A failure to start is reported where the step asks for the model, not here.
+  const startEarly = (fastPath: boolean) => {
+    if (!fastPath) void backend?.ready().catch(() => undefined);
+  };
   const dependencies = () => ({ ...defaultDependencies, beforeModel: () => backend?.ready() ?? Promise.resolve() });
   const onSignal = () => void stopStarted().finally(() => process.exit(130));
   process.once("SIGINT", onSignal);
@@ -168,7 +258,7 @@ export async function runCli(args: string[]): Promise<number> {
   try {
     let state;
     if (command === "test" || command === "run" || command === "validate") {
-      const raw = await readTest(positional);
+      const raw = await readTest(operand);
       if (flags["--backend"])
         raw.backend = {
           ...z.record(z.string(), z.unknown()).parse(raw.backend ?? {}),
@@ -187,17 +277,21 @@ export async function runCli(args: string[]): Promise<number> {
         return 0;
       }
       backend = await prepareBackend(input.backend);
+      startEarly(input.fastPath);
       state = await startRun(input, dependencies());
     } else if (command === "resume" || command === "recover") {
-      const runId = z.uuid().parse(positional);
-      const saved = (await loadRun(runId)).input.backend;
+      const runId = z.uuid().parse(operand);
+      const savedInput = (await loadRun(runId)).input;
+      const saved = savedInput.backend;
       if (noAutostart) saved.autostart = false;
       backend = await prepareBackend(saved);
+      startEarly(savedInput.fastPath);
       state = command === "recover" ? await recoverRun(runId, dependencies()) : await resumeRun(runId, dependencies());
-    } else throw new Error("Unknown command; use --help");
+    } else throw new UsageError(`Unknown command "${command}"`);
     while (state.status === "paused") state = await resumeRun(state.runId, dependencies());
     const reports = await writeReports(state, flags["--report-dir"] ?? resolve(stateRoot(), "reports"));
     console.log(JSON.stringify({ ...summarize(state), reports }));
+    if (process.stderr.isTTY) console.error(resultLine(state));
     return state.status === "completed" ? 0 : state.status === "cancelled" ? 130 : 1;
   } finally {
     process.off("SIGINT", onSignal);
@@ -213,17 +307,25 @@ if (
   try {
     process.exitCode = await runCli(process.argv.slice(2));
   } catch (error) {
-    console.error(
-      JSON.stringify({
-        error:
-          error instanceof z.ZodError
-            ? "Invalid test or command input: " + z.prettifyError(error)
-            : error instanceof Error
-              ? error.message
-              : "Command failed",
-        ...(error instanceof BackendSetupError ? { code: error.code, setup: error.setup } : {}),
-      }),
-    );
+    const message =
+      error instanceof z.ZodError
+        ? "Invalid test or command input: " + z.prettifyError(error)
+        : error instanceof Error
+          ? error.message
+          : "Command failed";
+    if (process.stderr.isTTY) {
+      // At a terminal: a sentence and what to do next. Piped: one JSON object, as programs have always read it.
+      console.error(`error: ${message}`);
+      if (error instanceof BackendSetupError) console.error(error.setup);
+      else if (error instanceof UsageError) console.error("Run 'testing-agent --help' for usage.");
+    } else
+      console.error(
+        JSON.stringify({
+          error: message,
+          ...(error instanceof BackendSetupError ? { code: error.code, setup: error.setup } : {}),
+          ...(error instanceof UsageError ? { hint: "Run 'testing-agent --help' for usage." } : {}),
+        }),
+      );
     process.exitCode = error instanceof BackendSetupError ? 1 : 2;
   }
 }
