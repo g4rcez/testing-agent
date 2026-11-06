@@ -19,6 +19,7 @@ testing-agent test tests/example.test.yaml   # run it
 | `testing-agent setup laya`                     | Starts the optional local Laya backend                                                                   |
 | `testing-agent init [folder] [--yaml\|--json]` | Creates a tests folder with an example test                                                              |
 | `testing-agent test <file>`                    | Runs a YAML or JSON test                                                                                 |
+| `testing-agent <command> --help`               | Describes one command; `testing-agent --help` lists them all (`-v` prints the version)                   |
 
 ## Install
 
@@ -101,6 +102,15 @@ testing-agent test wikipedia-search.yaml
 
 The CLI prints JSON with each step's `status` and `success`, the final `passed` result, and the video/report paths. A passing test exits with code `0`. Video recording is enabled by default. The same file ships as [examples/wikipedia-search.yaml](examples/wikipedia-search.yaml).
 
+The same test can be written with sentences only. A typing step does not need `value`: the text is read from the sentence (`Type IPv4 into the Search Wikipedia box` types `IPv4`, `Fill in the Login field with "ana"` types `ana`), and a check can be a sentence too. The text in a step is only used when no text model is configured, or when it is in quotes; with a text model, an unquoted text is still written by the model.
+
+```yaml
+steps:
+  - Type Large language model into the Search Wikipedia box
+  - instruction: Press Enter in the Search Wikipedia box to search
+    expect: The URL is https://en.wikipedia.org/wiki/Large_language_model and the page shows Large language model
+```
+
 Two ways to say when a step is done:
 
 - `expect` is a deterministic check (URL, page text) and is what decides the final result.
@@ -108,7 +118,9 @@ Two ways to say when a step is done:
 
 ### Fast path
 
-Before asking the model, the runner tries to settle each step from the page: typing a known `value` into a field the instruction names, pressing Enter in it, clicking or opening a control whose label the instruction names, choosing a dropdown option, switching a checkbox, scrolling. It only acts when exactly one control matches (case, accents and spacing are ignored); anything ambiguous, conditional (`if`, `not`, `never`, `or`...) or bound to a `selector` still goes to the model. Fast actions are marked `source: "fast"` in the result. The Wikipedia example below completes this way in about 6 seconds with no model at all, so the local Laya server is not even started. Turn it off with `--no-fast-path` or `fastPath: false`.
+Before asking the model, the runner tries to settle each step from the page: typing a `value` (given, or written in the sentence) into a field the instruction names, pressing Enter in it, clicking or opening a control whose label the instruction names, choosing a dropdown option, switching a checkbox, scrolling. It only acts when exactly one control matches (case, accents and spacing are ignored); anything ambiguous, conditional (`if`, `not`, `never`, `or`...) or bound to a `selector` still goes to the model. Fast actions are marked `source: "fast"` in the result. The Wikipedia example below completes this way in about 6 seconds with no model at all, so the local Laya server is not even started. Turn it off with `--no-fast-path` or `fastPath: false`.
+
+Steps and `assume` statements can be in English (default), Portuguese or Spanish. List the languages in the test file, in the order to try them: `languages: [pt, en]`. See [Languages](docs/REFERENCE.md#languages).
 
 ## Recorded passing test
 

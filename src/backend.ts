@@ -79,6 +79,9 @@ export type BackendDeps = {
 
 const localHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const FIRST_START_TIMEOUT_MS = 15 * 60_000;
+// How often a starting server is asked whether it answers. A model that loads in 3 seconds is noticed within
+// this time after it is ready, not within the next 2 seconds.
+const PROBE_INTERVAL_MS = 200;
 
 // The entry is resolved from this module, so it is the right file for the CLI, the plugin and the
 // bundled dist alike (process.argv[1] is the wrong program for the plugin and a stale build otherwise).
@@ -183,7 +186,7 @@ async function startServer(
   const deadline = Date.now() + timeoutMs;
   try {
     for (;;) {
-      const exited = await Promise.race([server.exited, deps.wait(2000).then(() => undefined)]);
+      const exited = await Promise.race([server.exited, deps.wait(PROBE_INTERVAL_MS).then(() => undefined)]);
       if (exited !== undefined)
         throw new BackendSetupError(
           backend,

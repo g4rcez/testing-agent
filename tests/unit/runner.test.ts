@@ -730,3 +730,108 @@ test("a step completes once the model confirms its assumption about the page", a
   expect(state.completedSteps).toEqual([{ instruction: "Type IPv6 into the search box", verification: "assumption" }]);
   expect(state.status).toBe("completed");
 });
+
+test("the next decision of a step uses the page read right after the action", async () => {
+  let reads = 0;
+  let executed = 0;
+  const seen: string[] = [];
+  const result = await startRun(
+    { ...input(), steps: [{ instruction: "Open result" }], actionsPerCall: 3 },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => observed(String(executed), `App read-${++reads}`),
+        execute: async () => {
+          executed++;
+        },
+      }),
+      decide: async (_input, _index, page) => {
+        seen.push(page.tree);
+        return decision(executed ? "DONE" : "CLICK");
+      },
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(result.status).toBe("completed");
+  // read-2 is the check of the final assertions, which this browser answers by reading the page.
+  expect(seen).toEqual(["App read-1", "App read-3"]);
+});
+
+test("a step with an assumption reads the page again before its next decision", async () => {
+  let reads = 0;
+  let executed = 0;
+  const seen: string[] = [];
+  await startRun(
+    { ...input(), steps: [{ instruction: "Open result", assume: "The result is open" }], actionsPerCall: 3 },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => observed(String(executed), `App read-${++reads}`),
+        execute: async () => {
+          executed++;
+        },
+      }),
+      decide: async (_input, _index, page) => {
+        seen.push(page.tree);
+        return decision(executed ? "DONE" : "CLICK");
+      },
+      fieldValue: async () => "unused",
+      assume: async () => false,
+    },
+  );
+  expect(seen).toEqual(["App read-1", "App read-4"]);
+});
+
+test("a call count and time of the browser are kept for the run", async () => {
+  const result = await startRun(
+    { ...input(), steps: [{ instruction: "Open result" }], actionsPerCall: 2 },
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => observed(),
+        execute: async () => {},
+        stats: { calls: 7, ms: 120.4 },
+      }),
+      decide: async () => decision("DONE"),
+      fieldValue: async () => "unused",
+    },
+  );
+  expect(summarize(result)).toMatchObject({ browserCalls: 7, browserMs: 120 });
+});
+
+test("a typing step types the text its sentence says, without asking for a value", async () => {
+  const typedTexts: (string | undefined)[] = [];
+  let typed = false;
+  const field = { ref: "e3", label: "Search Wikipedia", role: "searchbox", currentValue: "" };
+  const result = await startRun(
+    runSchema.parse({
+      prompt: "Search",
+      steps: ["Type Large language model into the Search Wikipedia box"],
+      backend: { provider: "laya" },
+      session: "unit",
+      expect: [{ text: "App", timeoutMs: 0 }],
+    }),
+    {
+      browser: () => ({
+        command: async () => ({}),
+        observe: async () => ({
+          ...observed(String(typed)),
+          snapshotId: "snap",
+          targets: { TYPE_TEXT: { e3: { ...field, currentValue: typed ? "Large language model" : "" } } },
+        }),
+        execute: async (_decision, text) => {
+          typedTexts.push(text);
+          typed = true;
+        },
+      }),
+      decide: async () => {
+        throw new Error("the model must not be asked");
+      },
+      fieldValue: async () => {
+        throw new Error("no value must be asked for");
+      },
+    },
+  );
+  expect(result.status).toBe("completed");
+  expect(typedTexts).toEqual(["Large language model"]);
+});

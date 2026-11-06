@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { parseExpectation } from "./expectation.ts";
+import { LANGUAGES } from "./lexicon.ts";
 
 export const PROTOCOL = "agent-browser.plugin.v1";
 export const capabilities = [
@@ -85,6 +87,28 @@ export const assertionSchema = z
   )
   .refine((value) => value.search === undefined || value.text !== undefined, "Searching applies to text assertions");
 export type Assertion = z.infer<typeof assertionSchema>;
+// A check is an object, or a sentence such as "The page shows Welcome" or "The URL is https://example.com/home".
+const sentenceSchema = z
+  .string()
+  .min(1)
+  .max(2000)
+  .transform((sentence, context) => {
+    const parsed = parseExpectation(sentence);
+    if (!parsed)
+      context.addIssue({
+        code: "custom",
+        message: 'Write the check as "The page shows <text>", "The URL is <address>" or both joined by "and"',
+      });
+    return parsed ?? z.NEVER;
+  })
+  .pipe(assertionSchema);
+// A union only says "Invalid input"; the first issue of the branch that fits the value says what is wrong with it.
+const explain =
+  (stringBranch: number) => (issue: { code: string; input?: unknown; errors?: { message: string }[][] }) =>
+    issue.code === "invalid_union"
+      ? issue.errors?.[typeof issue.input === "string" ? stringBranch : 1 - stringBranch]?.[0]?.message
+      : undefined;
+export const expectSchema = z.union([assertionSchema, sentenceSchema], { error: explain(1) });
 export const stepSchema = z
   .object({
     instruction: text,
@@ -95,7 +119,7 @@ export const stepSchema = z
     // Which tab the step works in: "current" (default), "new" (the latest tab opened), "opener" (the first
     // tab), or a tab id or label such as "t2".
     tab: z.string().min(1).max(60).optional(),
-    expect: assertionSchema.optional(),
+    expect: expectSchema.optional(),
   })
   .refine((value) => value.value === undefined || value.valueFromEnv === undefined, "Choose value or valueFromEnv")
   .refine(
@@ -142,7 +166,11 @@ export const runSchema = z
     name: z.string().trim().min(1).max(200).default("AI browser test"),
     prompt: text,
     steps: z
-      .array(z.union([text.transform((instruction): z.infer<typeof stepSchema> => ({ instruction })), stepSchema]))
+      .array(
+        z.union([text.transform((instruction): z.infer<typeof stepSchema> => ({ instruction })), stepSchema], {
+          error: explain(0),
+        }),
+      )
       .min(1)
       .max(100),
     backend: backendSchema,
@@ -169,9 +197,15 @@ export const runSchema = z
     searchMs: z.number().int().min(1000).max(120_000).default(40_000),
     // Resolve unambiguous steps from the page without the model; false sends every step to the model.
     fastPath: z.boolean().default(true),
+    // The languages that step instructions and assume statements are written in, in the order they are tried.
+    languages: z
+      .array(z.enum(LANGUAGES))
+      .min(1)
+      .refine((value) => new Set(value).size === value.length, "List each language once")
+      .default(["en"]),
     timeoutMs: z.number().int().min(1000).max(45_000).default(45_000),
     totalTimeoutMs: z.number().int().min(1000).max(1800000).default(120000),
-    expect: z.array(assertionSchema).min(1).max(20).optional(),
+    expect: z.array(expectSchema).min(1).max(20).optional(),
     minConfidence: z.number().min(0).max(1).default(0),
   })
   .refine((value) => value.url !== undefined || value.session !== undefined, "Supply an app URL or existing session")
@@ -255,4 +289,6 @@ export type Decision = {
   rule?: string;
   // Model passes the target took when the options were asked in groups.
   rounds?: number;
+  // The text to type, when the step itself says it ("Type IPv4 into the Search box").
+  text?: string;
 };

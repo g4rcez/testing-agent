@@ -190,6 +190,23 @@ test("a server that exits before it is ready fails fast and is cleaned up", asyn
   expect(stopped).toBe(1);
 });
 
+test("a server that comes up is noticed within a fraction of a second, not seconds later", async () => {
+  const readyAt = Date.now() + 300;
+  const comesUp = (async () =>
+    Date.now() < readyAt ? Promise.reject(new Error("refused")) : new Response(null, { status: 405 })) as (
+    url: string,
+    options: RequestInit,
+  ) => Promise<Response>;
+  const started = Date.now();
+  const handle = await ensureBackend({ provider: "laya" }, comesUp, {
+    autostart: true,
+    start: () => ({ exited: never, stop: async () => undefined }),
+    wait: (ms) => Bun.sleep(ms),
+  });
+  expect(handle).toBeDefined();
+  expect(Date.now() - started).toBeLessThan(1000);
+});
+
 test("a server that never becomes ready times out and is stopped", async () => {
   let stopped = 0;
   await expect(

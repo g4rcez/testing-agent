@@ -17,6 +17,12 @@ export function normalizeText(text: string, caseSensitive = false): string {
   return caseSensitive ? out.normalize("NFC") : out.toLowerCase();
 }
 
+/** The folded words of a text: runs of letters and digits, so "Spider-Man" is "spider" and "man". */
+export const words = (text: string): string[] =>
+  normalizeText(text)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
 /** Same address after URL parsing: scheme and host ignore case, the path and query keep it. */
 export function urlsEqual(expected: string, actual: string): boolean {
   try {

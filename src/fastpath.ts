@@ -1,5 +1,8 @@
 import type { Decision, Observation, RunInput, Target } from "./contracts.ts";
-import { normalizeText } from "./normalize.ts";
+import { textModelFor } from "./decision.ts";
+import { grammarFor, wholeWord, type Grammar } from "./grammar.ts";
+import type { Language } from "./lexicon.ts";
+import { normalizeText, words } from "./normalize.ts";
 
 // Resolves a step from the page without asking the model, when the instruction and the page leave
 // no doubt. Anything ambiguous, conditional or unfamiliar returns null and goes to the model.
@@ -17,13 +20,23 @@ export type FastRule = "type" | "press-enter" | "click" | "select" | "toggle" | 
 const MAX_REVEALS = 15;
 type Match = { id: string; target: Target };
 
-// Words that make an instruction conditional or negated; a literal reading would guess wrong.
-const CAUTION = /\b(if|unless|never|not|only|without|already|whether|until|except|or|optional|maybe)\b/;
-const FIELD_WORD = "(?:search box|search field|text box|text field|textbox|searchbox|box|field|input)";
-const words = (text: string) =>
-  normalizeText(text)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
+// The words of each language are in src/lexicon.ts; src/grammar.ts builds the patterns used below.
+const ENGLISH: readonly Language[] = ["en"];
+
+// The dropdowns on screen whose label has every word of the phrase.
+function dropdownsNamed(phrase: string, observation: Observation) {
+  const wanted = words(phrase);
+  return observation.elements.filter((element) => {
+    const have = new Set(words(element.label));
+    return element.operations.includes("SELECT") && wanted.every((word) => have.has(word));
+  });
+}
+const switchesOf = (observation: Observation) =>
+  Object.fromEntries(
+    Object.entries(observation.targets.CLICK ?? {}).filter(([, target]) =>
+      ["checkbox", "switch"].includes(target.role ?? ""),
+    ),
+  );
 
 /**
  * The one target that the phrase names: an exact label first, then a label that contains every
@@ -110,69 +123,38 @@ function reveal(
   return null;
 }
 
-const CLICK_PATTERN = /^(?:click|tap|open|follow|press|submit|go to|navigate to)\b(?:\s+on)?(?:\s+the)?\s+(.+)$/;
-const ORDINALS: Record<string, number> = {
-  first: 1,
-  second: 2,
-  third: 3,
-  fourth: 4,
-  fifth: 5,
-  sixth: 6,
-  seventh: 7,
-  eighth: 8,
-  ninth: 9,
-  tenth: 10,
-  last: -1,
-};
-// The word for a kind of control, and the role the page reports for it.
-const KINDS: Record<string, string> = {
-  button: "button",
-  link: "link",
-  tab: "tab",
-  "menu item": "menuitem",
-  checkbox: "checkbox",
-  radio: "radio",
-  switch: "switch",
-};
-const KIND_WORD = new RegExp(`^(.+?)\\s+(${Object.keys(KINDS).join("|")})$`);
-const WHERE = /\s+(?:in|inside|within|from|under|near)\s+/g;
-const CONTAINER_WORD = /\b(?:section|list|dialog|table|panel|card|form|area|modal|region|group|row|page)$/;
-
 /**
  * What a click step names. `label` is the control's own words. What narrows it down is optional: its `kind`
  * ("the Pay button"), its place among the same ones ("the second Delete", "the last Edit": `ordinal`, -1 for the
  * last) and where it is ("in the row of Order #1002", "in the Billing section": `within`).
  */
 export type ClickAim = { label: string; kind?: string; ordinal?: number; within?: string };
-export function parseClick(named: string): ClickAim {
+export function parseClick(named: string, grammar: Grammar = grammarFor("en")): ClickAim {
   const takeKind = (text: string) => {
-    const kind = text.match(KIND_WORD);
-    return kind ? { rest: kind[1]!, kind: KINDS[kind[2]!] } : { rest: text, kind: undefined };
+    const found = text.match(grammar.kindPattern)?.groups;
+    return found ? { rest: found.rest!, kind: grammar.kinds.get(found.kind!) } : { rest: text, kind: undefined };
   };
-  let { rest, kind } = takeKind(named);
+  // The noun for a kind of control trails the label ("Pay button") or, in some languages, leads it ("botão Pagar").
+  let { rest, kind } = grammar.nounFirst ? { rest: named, kind: undefined } : takeKind(named);
   let within: string | undefined;
   // "in the ...", "from the ... list", "in row 3": a place, not part of the label ("sign in with Google" is a label).
-  for (const found of rest.matchAll(WHERE)) {
+  for (const found of rest.matchAll(grammar.where)) {
     const tail = rest.slice(found.index + found[0].length);
-    if (!/^(?:the|rows?)\b/.test(tail) && !CONTAINER_WORD.test(tail)) continue;
+    if (!grammar.placeStart.test(tail) && !grammar.placeNoun.test(tail)) continue;
     within =
-      tail
-        .replace(/^the\s+/, "")
-        .replace(/^rows?\s+(?:(?:of|for|with|containing)\s+)?/, "")
-        .replace(CONTAINER_WORD, "")
-        .trim() || undefined;
+      tail.replace(grammar.dropArticle, "").replace(grammar.dropRow, "").replace(grammar.dropPlaceNoun, "").trim() ||
+      undefined;
     rest = rest.slice(0, found.index);
-    if (kind === undefined) ({ rest, kind } = takeKind(rest));
+    if (kind === undefined && !grammar.nounFirst) ({ rest, kind } = takeKind(rest));
     break;
   }
   let ordinal: number | undefined;
-  const nth = rest.match(
-    /^(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(.+)$/,
-  );
+  const nth = rest.match(grammar.ordinal)?.groups;
   if (nth) {
-    ordinal = ORDINALS[nth[1]!] ?? Number.parseInt(nth[1]!, 10);
-    rest = nth[2]!;
+    ordinal = grammar.ordinals.get(nth.word!) ?? Number.parseInt(nth.word!, 10);
+    rest = nth.rest!;
   }
+  if (grammar.nounFirst) ({ rest, kind } = takeKind(rest));
   return {
     label: rest,
     ...(kind ? { kind } : {}),
@@ -181,20 +163,23 @@ export function parseClick(named: string): ClickAim {
   };
 }
 
-/** The aim of a click step, or null when the step is not a plain click. */
-export function clickAim(instruction: string): ClickAim | null {
+/** The aim of a click step, or null when the step is not a plain click. Each language is tried in turn. */
+export function clickAim(instruction: string, languages: readonly Language[] = ENGLISH): ClickAim | null {
   const text = normalizeText(instruction);
-  if (CAUTION.test(text)) return null;
-  const named = text.match(CLICK_PATTERN)?.[1];
-  return named ? parseClick(named) : null;
+  for (const language of languages) {
+    const grammar = grammarFor(language);
+    if (grammar.caution.test(text)) continue;
+    const named = text.match(grammar.click)?.groups?.named;
+    if (named) return parseClick(named, grammar);
+  }
+  return null;
 }
 
 // The phrase as written and without a trailing role word ("log in link" can be a label); then the shorter ones,
 // without a trailing "from/near/in ..." clause, which say less about where the control is.
-function clickPhrases(named: string): { written: string[]; shorter: string[] } {
-  const withoutRole = (phrase: string) => phrase.replace(/\s+(?:button|link|tab|menu item|menu|icon)$/, "");
-  const withoutClause = (phrase: string) =>
-    phrase.replace(/\s+(?:from|near|in|on|to|at|under|inside|within)\s+.+$/, "");
+function clickPhrases(named: string, grammar: Grammar): { written: string[]; shorter: string[] } {
+  const withoutRole = (phrase: string) => phrase.replace(grammar.dropRole, "");
+  const withoutClause = (phrase: string) => phrase.replace(grammar.dropClause, "");
   const stripped = withoutRole(named);
   return {
     written: [...new Set([named, stripped])],
@@ -222,12 +207,73 @@ function pick(aim: ClickAim, targets: Record<string, Target> | undefined): Match
   return found.length === 1 ? found[0]! : null;
 }
 
-function fieldPhrase(text: string): string | undefined {
-  const pattern = new RegExp(`.*\\b(?:into|in|on|inside)\\s+(?:the\\s+)?(.+?)(?:\\s+${FIELD_WORD})?(?:\\s+to\\s+.*)?$`);
-  return text.match(pattern)?.[1];
+function fieldPhrase(text: string, grammar: Grammar): string | undefined {
+  return text.match(grammar.field)?.groups?.label;
 }
 
+/** The first language of the test that settles the step, or null when none does. */
 export function resolveFast(
+  input: RunInput,
+  stepIndex: number,
+  observation: Observation,
+  history: ActionRecord[],
+): FastDecision | null {
+  for (const language of input.languages) {
+    const decision = resolveIn(grammarFor(language), input, stepIndex, observation, history);
+    if (decision) return decision;
+  }
+  return null;
+}
+
+// The text in a typing step and the field it goes to: "Type IPv4 into the Search box", "Fill in the Login field with
+// "ana"". A quoted text is always the text to type. Without quotes it is only read when no text model is set up to
+// write it. Where the sentence could split in more than one place ("Type Sign in into the Login box"), the split
+// whose field the page has wins; a field that is not there yet (to be revealed) takes the last one.
+function typedText(
+  grammar: Grammar,
+  raw: string,
+  targets: Record<string, Target> | undefined,
+  textModel: boolean,
+): { text: string; label: string } | null {
+  const written = raw.trim();
+  // Fold one character at a time so a place in the folded text is a place in the text as written.
+  let folded = "";
+  const at: number[] = [];
+  let position = 0;
+  for (const character of written) {
+    const piece = character
+      .normalize("NFKD")
+      .replace(/\p{M}+/gu, "")
+      .toLowerCase();
+    for (let index = 0; index < piece.length; index++) at.push(position);
+    folded += piece;
+    position += character.length;
+  }
+  at.push(written.length);
+  const candidates: { text: string; label: string }[] = [];
+  const add = (from: number, to: number, label: string | undefined) => {
+    const cut = written.slice(at[from], at[to]).trim();
+    const quoted = cut.match(/^(["“'‘])(.+)(["”'’])$/s);
+    if (!label || !cut || (!quoted && textModel)) return;
+    candidates.push({ text: quoted ? quoted[2]! : cut, label });
+  };
+  const fill = folded.match(grammar.fillValue);
+  if (fill?.indices?.groups?.value) add(fill.indices.groups.value[0], fill.indices.groups.value[1], fill.groups?.label);
+  const lead = folded.match(grammar.typeLead);
+  if (lead && !fill)
+    for (const into of [...folded.matchAll(grammar.typeInto)].reverse()) {
+      if (into.index < lead[0].length) continue;
+      add(
+        lead[0].length,
+        into.index,
+        folded.slice(into.index + into[0].length).match(grammar.typeField)?.groups?.label,
+      );
+    }
+  return candidates.find((item) => lookup(item.label, targets).match) ?? candidates[0] ?? null;
+}
+
+function resolveIn(
+  grammar: Grammar,
   input: RunInput,
   stepIndex: number,
   observation: Observation,
@@ -238,9 +284,9 @@ export function resolveFast(
   const instruction = normalizeText(step.instruction);
   // A selector binds the step to one element the page script verifies. Typing into it is settled here, through
   // the target the page marked as matching the selector; any other kind of step with a selector goes to the model.
-  const typing = /^(?:type|enter|fill(?: in)?|input|write|put)\b/.test(instruction);
+  const typing = grammar.typing.test(instruction);
   if (step.selector !== undefined && !typing) return null;
-  if (CAUTION.test(instruction)) return null;
+  if (grammar.caution.test(instruction)) return null;
   const mine = history.filter((action) => action.stepIndex === stepIndex);
   const revealed = (actions: ActionRecord[]) => actions.filter((action) => action.rule === "reveal").length;
   const triedFast = (operation: string) =>
@@ -257,23 +303,18 @@ export function resolveFast(
   });
   const done = (rule: FastRule): FastDecision => ({ ...base, ...snapshot, rule, operation: "DONE", target: undefined });
 
-  const scroll = instruction.match(/^scroll\s+(down|up|left|right)\b\s*(.*)$/);
+  const scroll = instruction.match(grammar.scroll)?.groups;
   if (scroll) {
-    const operation = { down: "SCROLL_DOWN", up: "SCROLL_UP", left: "SCROLL_LEFT", right: "SCROLL_RIGHT" }[
-      scroll[1] as "down" | "up" | "left" | "right"
-    ];
+    const operation = grammar.directions.get(scroll.direction!)!;
     if (triedFast(operation)) return done("scroll");
     const options = observation.targets[operation];
     if (options && Object.keys(options).length) {
       // Containers can scroll: the instruction has to name one, or say "the page".
-      const named = scroll[2]!.replace(/^(?:(?:in|within|inside|of|on|through|the)\s+)+/, "").trim();
-      if (!named || named === "page")
+      const named = scroll.rest!.replace(grammar.scrollWithin, "").trim();
+      if (!named || grammar.scrollPage.has(named))
         return options.page ? act("scroll", operation, { id: "page", target: options.page }) : null;
       // As written first, then without a trailing noun ("the Results list" names a container called "Results").
-      for (const phrase of new Set([
-        named,
-        named.replace(/\s+(?:list|panel|pane|area|container|section|dialog|menu|box)$/, ""),
-      ])) {
+      for (const phrase of new Set([named, named.replace(grammar.scrollNoun, "")])) {
         const found = lookup(phrase, options);
         if (found.match) return act("scroll", operation, found.match);
         if (found.ambiguous) return null;
@@ -283,14 +324,18 @@ export function resolveFast(
     return observation.controls?.includes(operation) ? act("scroll", operation) : null;
   }
 
-  if (/^(?:type|enter|fill(?: in)?|input|write|put)\b/.test(instruction)) {
-    if (step.value === undefined && step.valueFromEnv === undefined) return null;
-    const value = step.value === undefined ? undefined : normalizeText(step.value);
+  if (typing) {
+    const given = step.value !== undefined || step.valueFromEnv !== undefined;
+    const written = given
+      ? null
+      : typedText(grammar, step.instruction, observation.targets.TYPE_TEXT, textModelFor(input) !== undefined);
+    if (!given && !written) return null;
+    const literal = step.value ?? written?.text;
+    const value = literal === undefined ? undefined : normalizeText(literal);
     // The value may sit between the verb and the field ("type IPv4 into the box"); keep it out of the label.
-    const stripped = value ? instruction.replace(value, " ").replace(/\s+/g, " ") : instruction;
-    const label =
-      stripped.match(new RegExp(`^fill(?: in)?\\s+(?:the\\s+)?(.+?)(?:\\s+${FIELD_WORD})?\\s+with\\b`))?.[1] ??
-      fieldPhrase(stripped);
+    // Whole word only: the value "log" must not be cut out of "login".
+    const stripped = value && !written ? instruction.replace(wholeWord(value), " ").replace(/\s+/g, " ") : instruction;
+    const label = written?.label ?? stripped.match(grammar.fillWith)?.groups?.label ?? fieldPhrase(stripped, grammar);
     let found: { match: Match | null; ambiguous: boolean };
     if (step.selector !== undefined) {
       const bound = Object.entries(observation.targets.TYPE_TEXT ?? {}).filter(([, target]) => target.bound);
@@ -311,13 +356,14 @@ export function resolveFast(
     // A value read from the environment is not known here, and a password field never shows it: once the field
     // has been typed into and is not empty, the step is done.
     if (value === undefined && triedFast("TYPE_TEXT") && (match.target.currentValue ?? "") !== "") return done("type");
-    return triedFast("TYPE_TEXT") ? null : act("type", "TYPE_TEXT", match);
+    if (triedFast("TYPE_TEXT")) return null;
+    return written ? { ...act("type", "TYPE_TEXT", match), text: written.text } : act("type", "TYPE_TEXT", match);
   }
 
-  if (/^(?:press|hit)\s+(?:the\s+)?(?:enter|return)\b/.test(instruction)) {
+  if (grammar.pressEnter.test(instruction)) {
     if (triedFast("PRESS_ENTER")) return null;
     const targets = observation.targets.PRESS_ENTER;
-    const label = fieldPhrase(instruction.replace(/^(?:press|hit)\s+(?:the\s+)?(?:enter|return)\s*/, ""));
+    const label = fieldPhrase(instruction.replace(grammar.pressEnterPrefix, ""), grammar);
     let match = label ? matchTargets(label, targets) : null;
     if (!label) {
       // "Press Enter" alone: the field just typed into, else the only field that can submit.
@@ -331,46 +377,31 @@ export function resolveFast(
     return match ? act("press-enter", "PRESS_ENTER", match) : null;
   }
 
-  const choice = instruction.match(
-    new RegExp(
-      `^(?:select|choose|pick)\\s+(?:the\\s+)?(.+?)\\s+(?:as|in|for|from)\\s+(?:the\\s+)?(.+?)(?:\\s+(?:dropdown|select|menu|list|${FIELD_WORD.slice(3, -1)}))?$`,
-    ),
-  );
+  const choice = instruction.match(grammar.choice)?.groups;
   if (choice) {
     // Once the dropdown shows the option, the step is done; the page says so, not the model.
-    const fieldWords = words(choice[2]!);
-    const fields = observation.elements.filter((element) => {
-      const have = new Set(words(element.label));
-      return element.operations.includes("SELECT") && fieldWords.every((word) => have.has(word));
-    });
-    if (fields.length === 1 && normalizeText(fields[0]!.value) === normalizeText(choice[1]!)) return done("select");
-    const match = matchOption(choice[2]!, choice[1]!, observation.targets.SELECT);
+    const fields = dropdownsNamed(choice.field!, observation);
+    if (fields.length === 1 && normalizeText(fields[0]!.value) === normalizeText(choice.option!)) return done("select");
+    const match = matchOption(choice.field!, choice.option!, observation.targets.SELECT);
     return match && !triedFast("SELECT") ? act("select", "SELECT", match) : null;
   }
 
-  const toggle = instruction.match(
-    /^(enable|check|tick|turn on|disable|uncheck|untick|turn off)\s+(?:the\s+)?(.+?)(?:\s+(?:checkbox|switch|toggle|option))?$/,
-  );
+  const toggle = instruction.match(grammar.toggle)?.groups;
   if (toggle) {
-    const wanted = ["enable", "check", "tick", "turn on"].includes(toggle[1]!) ? "true" : "false";
-    const switches = Object.fromEntries(
-      Object.entries(observation.targets.CLICK ?? {}).filter(([, target]) =>
-        ["checkbox", "switch"].includes(target.role ?? ""),
-      ),
-    );
-    const match = matchTargets(toggle[2]!, switches);
+    const wanted = grammar.toggleOn.has(toggle.verb!) ? "true" : "false";
+    const match = matchTargets(toggle.label!, switchesOf(observation));
     if (!match || (match.target.checked !== "true" && match.target.checked !== "false")) return null;
     if (match.target.checked === wanted) return done("toggle");
     return triedFast("CLICK") ? null : act("toggle", "CLICK", match);
   }
 
-  const click = instruction.match(CLICK_PATTERN);
+  const click = instruction.match(grammar.click)?.groups;
   if (click) {
     if (triedFast("CLICK")) return null;
     const targets = observation.targets.CLICK;
-    const named = click[1]!;
-    const { written, shorter } = clickPhrases(named);
-    const aim = parseClick(named);
+    const named = click.named!;
+    const { written, shorter } = clickPhrases(named, grammar);
+    const aim = parseClick(named, grammar);
     // The words as written first ("open link in new tab" can be a label).
     let ambiguous = false;
     for (const phrase of written) {
@@ -401,17 +432,29 @@ export function resolveFast(
 }
 
 /**
- * Answers "The <field> box contains <value>" from the page itself. Returns undefined when the
- * statement is not of that form or names no single field, so the model is asked instead.
+ * Answers "The <field> box contains <value>", "The <dropdown> shows <option>" and "The <checkbox> is checked" from
+ * the page itself. Returns undefined when the statement is not of one of these forms or names no single control,
+ * so the model is asked instead.
  */
-export function assumeDeterministic(statement: string, observation: Observation): boolean | undefined {
+export function assumeDeterministic(
+  statement: string,
+  observation: Observation,
+  languages: readonly Language[] = ENGLISH,
+): boolean | undefined {
   const text = normalizeText(statement);
-  if (CAUTION.test(text)) return undefined;
-  const parsed = text.match(
-    /^(?:the\s+)?(.+?)\s+(?:box|field|input|textbox|searchbox)\s+(?:contains|has|shows|holds|equals|is set to)\s+(.+)$/,
-  );
-  if (!parsed) return undefined;
-  const match = matchTargets(parsed[1]!, observation.targets.TYPE_TEXT);
-  if (!match) return undefined;
-  return normalizeText(match.target.currentValue ?? "") === parsed[2];
+  for (const language of languages) {
+    const grammar = grammarFor(language);
+    if (grammar.caution.test(text)) continue;
+    const parsed = text.match(grammar.assume)?.groups;
+    const field = parsed && matchTargets(parsed.label!, observation.targets.TYPE_TEXT);
+    if (field) return normalizeText(field.target.currentValue ?? "") === parsed.value;
+    const shown = text.match(grammar.assumeDropdown)?.groups;
+    const dropdowns = shown ? dropdownsNamed(shown.label!, observation) : [];
+    if (dropdowns.length === 1) return normalizeText(dropdowns[0]!.value) === shown!.value;
+    const state = text.match(grammar.assumeSwitch)?.groups;
+    const control = state && matchTargets(state.label!, switchesOf(observation));
+    if (control && (control.target.checked === "true" || control.target.checked === "false"))
+      return (control.target.checked === "true") === grammar.checkedStates.has(state.state!);
+  }
+  return undefined;
 }

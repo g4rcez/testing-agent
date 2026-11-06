@@ -1,5 +1,6 @@
 import type { Observation, Step } from "./contracts.ts";
 import { clickAim } from "./fastpath.ts";
+import type { Language } from "./lexicon.ts";
 import { normalizeText } from "./normalize.ts";
 
 // When a step names a control that is not on screen, the runner looks for it by scrolling before the model is
@@ -26,9 +27,12 @@ const covers = (wanted: string[], text: string) => {
 };
 
 /** What to look for on behalf of a step, or null when the step does not name a control. */
-export function searchPlan(step: Pick<Step, "instruction" | "selector">): SearchPlan | null {
+export function searchPlan(
+  step: Pick<Step, "instruction" | "selector">,
+  languages: readonly Language[] = ["en"],
+): SearchPlan | null {
   if (step.selector !== undefined) return null;
-  const aim = clickAim(step.instruction);
+  const aim = clickAim(step.instruction, languages);
   // "The second Delete" only means something among the controls on screen.
   if (!aim || aim.ordinal !== undefined || !words(aim.label).length) return null;
   return {

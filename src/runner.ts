@@ -61,6 +61,7 @@ const decisionSchema = z.object({
   source: z.enum(["model", "fast", "deterministic"]).optional(),
   rule: z.string().optional(),
   rounds: z.number().optional(),
+  text: z.string().optional(),
 });
 const actionSchema = z.object({
   stepIndex: z.number().int(),
@@ -167,6 +168,8 @@ const stateSchema = z.object({
     .optional(),
   unchangedActions: z.number().int().min(0),
   staleDecisions: z.number().int().min(0),
+  // agent-browser processes started over all calls of the run, and the time they took.
+  browserStats: z.object({ calls: z.number().int().min(0), ms: z.number().min(0) }).optional(),
   video: z
     .object({
       path: z.string(),
@@ -183,7 +186,7 @@ const stateSchema = z.object({
 });
 export type RunState = z.infer<typeof stateSchema>;
 type BrowserPort = Pick<Browser, "command" | "observe" | "execute"> &
-  Partial<Pick<Browser, "receipt" | "assert" | "tabs" | "switchTab" | "search">>;
+  Partial<Pick<Browser, "receipt" | "assert" | "tabs" | "switchTab" | "search" | "stats">>;
 export type RunnerDependencies = {
   browser: (session: string, deadline: number, signal?: AbortSignal, config?: BrowserConfig) => BrowserPort;
   decide: typeof decide;
@@ -317,7 +320,7 @@ async function searchForStep(
   observed: Observation,
   callDeadline: number,
 ): Promise<"again" | "stopped" | "none"> {
-  const plan = searchPlan(step);
+  const plan = searchPlan(step, state.input.languages);
   if (!plan || !browser.search || isOnScreen(plan, observed)) return "none";
   // A step that has already acted found its control; if it is gone now the page is moving on, not missing it.
   if (state.actions.some((action) => action.stepIndex === state.stepIndex && action.source !== "deterministic"))
@@ -451,6 +454,9 @@ export function summarize(state: RunState) {
     reasonCode: state.reasonCode ?? null,
     ...(state.status === "completed" ? {} : { debug: debugReport(state) }),
     elapsedMs: (state.endedAt ?? Date.now()) - state.createdAt,
+    ...(state.browserStats
+      ? { browserCalls: state.browserStats.calls, browserMs: Math.round(state.browserStats.ms) }
+      : {}),
     resume: state.status === "paused" ? { type: "agent.resume", request: { runId: state.runId } } : null,
   };
 }
@@ -698,6 +704,8 @@ async function executeRun(
     state.endedAt = null;
     await saveRun(state);
     let executed = 0;
+    // The observation taken right after an action is the one the next decision of the same step needs.
+    let carried: { stepIndex: number; observation: Observation } | undefined;
     try {
       if (state.input.recordVideo && !state.video) {
         const directory = resolve(stateRoot(), "videos");
@@ -766,7 +774,11 @@ async function executeRun(
         if (!step) throw new Error("Missing current step");
         // Choose the tab once, when the step starts: a pop-up may close itself as part of the step.
         if (step.tab && state.stepDecisions === 0) await selectTab(browser, state, step.tab);
-        const observed = await browser.observe(step.selector, goalOf(step));
+        const observed =
+          carried?.stepIndex === state.stepIndex
+            ? carried.observation
+            : await browser.observe(step.selector, goalOf(step));
+        carried = undefined;
         let controlsFiltered = false;
         const completionAssertions = step.expect
           ? [step.expect]
@@ -917,7 +929,8 @@ async function executeRun(
         }
         const text =
           decision.operation === "TYPE_TEXT"
-            ? await dependencies.fieldValue(state.input, step, observed, decision, callDeadline, controller.signal)
+            ? (decision.text ??
+              (await dependencies.fieldValue(state.input, step, observed, decision, callDeadline, controller.signal)))
             : undefined;
         const actionId = crypto.randomUUID();
         state.pendingAction = {
@@ -974,9 +987,14 @@ async function executeRun(
         }
         const after = await browser.observe(step.selector, goalOf(step));
         // A step may state what must be true on the page once its action is done.
+        // Only a look taken with no model call after it is as fresh as the one the next decision would take.
+        if (!step.assume || step.expect || decision.source === "deterministic")
+          carried = { stepIndex: state.stepIndex, observation: after };
         if (step.assume && !step.expect && decision.source !== "deterministic") {
           // A plain "the <field> box contains <value>" is read off the page; the model only judges the rest.
-          const verdict = state.input.fastPath ? assumeDeterministic(step.assume, after) : undefined;
+          const verdict = state.input.fastPath
+            ? assumeDeterministic(step.assume, after, state.input.languages)
+            : undefined;
           if (verdict === undefined) await dependencies.beforeModel?.();
           const confirmed =
             verdict ??
@@ -1057,6 +1075,11 @@ async function executeRun(
         },
       });
     }
+    if (browser.stats)
+      state.browserStats = {
+        calls: (state.browserStats?.calls ?? 0) + browser.stats.calls,
+        ms: (state.browserStats?.ms ?? 0) + browser.stats.ms,
+      };
     if (!["running", "paused"].includes(state.status)) {
       await finishVideo(state, dependencies);
       state.endedAt = Date.now();
